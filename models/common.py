@@ -682,3 +682,11 @@ class Classify(nn.Module):
     def forward(self, x):
         z = torch.cat([self.aap(y) for y in (x if isinstance(x, list) else [x])], 1)  # cat if list
         return self.flat(self.conv(z))  # flatten to x(b,c2)
+
+class Dropout(nn.Module):
+    def __init__(self,dropout_rate=0):
+        super(Dropout,self).__init__()
+        self.dropout=nn.Dropout(p=dropout_rate)
+
+    def forward(self,x):
+        return self.dropout(x)
