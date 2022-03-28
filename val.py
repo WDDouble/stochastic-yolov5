@@ -41,7 +41,7 @@ from utils.callbacks import Callbacks
 from utils.datasets import create_dataloader
 from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check_requirements, check_yaml,
                            coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
-                           scale_coords, xywh2xyxy, xyxy2xywh, intersect_dicts)
+                           scale_coords, xywh2xyxy, xyxy2xywh, intersect_dicts,clip_coords,cov,is_pos_semidef,get_near_psd)
 from utils.metrics import ConfusionMatrix, ap_per_class
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
@@ -158,7 +158,9 @@ def run(data,
 
     # Configure
     model.eval()
-    model[-1].train() #enable dropout
+    for m in model.modules():
+        if m.__class__.__name__.startswith('Dropout'):
+            m.train() #enable dropout
 
     cuda = device.type != 'cpu'
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
@@ -176,11 +178,11 @@ def run(data,
                                        workers=workers, prefix=colorstr(f'{task}: '))[0]
 
     seen = 0
-    confusion_matrix = ConfusionMatrix(nc=nc)
+
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
-    dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    s = ('%20s' + '%10s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@0.5', 'F1')
+    p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
@@ -198,7 +200,7 @@ def run(data,
         with torch.no_grad():
             # Inference
             if num_samples == 1:
-                out, train_out = model(im) if training else model(im, augment=augment,
+                inf_out, train_out = model(im) if training else model(im, augment=augment,
                                                                   val=True)  # inference, loss outputs
             elif num_samples > 1:
                 infs_all = []
@@ -224,173 +226,183 @@ def run(data,
                                                                   max_width=width, max_height=height)
             dt[2] += time_sync() - t3
 
-        # Metrics
-        for si, pred in enumerate(out):
-            labels = targets[targets[:, 0] == si, 1:]
-            nl = len(labels)
-            tcls = labels[:, 0].tolist() if nl else []  # target class
-            path, shape = Path(paths[si]), shapes[si][0]
-            seen += 1
+            for si, pred in enumerate(output):
+                labels = targets[targets[:, 0] == si, 1:]
+                nl = len(labels)
+                tcls = labels[:, 0].tolist() if nl else []  # target class
+                seen += 1
 
-            if len(pred) == 0:
-                if nl:
-                    stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
-                continue
-            if save_json:
+                if pred is None:
+                    if nl:
+                        stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+                    continue
 
-                # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
-                image_id = int(Path(paths[si]).stem.split('_')[-1])
-                box = pred[:, :4].clone()  # xyxy
-                scale_coords(imgs[si].shape[1:], box, shapes[si][0], shapes[si][1])  # to original shape
-                box = xyxy2xywh(box)  # xywh
-                box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
+                # Append to text file
+                # with open('test.txt', 'a') as file:
+                #    [file.write('%11.5g' * 7 % tuple(x) + '\n') for x in pred]
 
-                # Getting covariances
-                # The transformations to coordinates follow the ones that are done below here after the if clause
-                if num_samples > 1:
-                    # output: BS(list) x NUM_DETECTIONS x 6
-                    # sampled_coords : BS(list) x NUM_DETECTIONS x NUM_SAMPLES x 4
-                    # sampled_boxes : NUM_DETECTIONS x NUM_SAMPLES x 4
-                    sampled_boxes = xywh2xyxy(sampled_coords[si].reshape(-1, 4)).reshape(sampled_coords[si].shape)
-                    clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
+                # Clip boxes to image bounds
+                clip_coords(pred, (height, width))
 
-                    scale_coords(imgs[si].shape[1:], sampled_boxes.reshape(-1, 4), shapes[si][0], shapes[si][1])
+                # Append to pycocotools JSON dictionary
+                if save_json:
 
-                    # It will have 2 covariances matrices of 2X2 for each one of the two xy coordinates
-                    covar_batch = torch.zeros(sampled_boxes.shape[0], 2, 2, 2)
-                    for det_id in range(sampled_boxes.shape[0]):
-                        covar_batch[det_id, 0, ...] = cov(sampled_boxes[det_id, :, :2])
-                        covar_batch[det_id, 1, ...] = cov(sampled_boxes[det_id, :, 2:])
+                    # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
+                    image_id = int(Path(paths[si]).stem.split('_')[-1])
+                    box = pred[:, :4].clone()  # xyxy
+                    scale_coords(im[si].shape[1:], box, shapes[si][0], shapes[si][1])  # to original shape
+                    box = xyxy2xywh(box)  # xywh
+                    box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
 
-                    # Rounding it for smaller size
-                    covar_batch = np.around(covar_batch.numpy(), 5).tolist()
-                else:
-                    # Just dummy covars for the json zip() down below
-                    covar_batch = [None] * pred.shape[0]
+                    # Getting covariances
+                    # The transformations to coordinates follow the ones that are done below here after the if clause
+                    if num_samples > 1:
+                        # output: BS(list) x NUM_DETECTIONS x 6
+                        # sampled_coords : BS(list) x NUM_DETECTIONS x NUM_SAMPLES x 4
+                        # sampled_boxes : NUM_DETECTIONS x NUM_SAMPLES x 4
+                        sampled_boxes = xywh2xyxy(sampled_coords[si].reshape(-1, 4)).reshape(sampled_coords[si].shape)
+                        clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
 
-                for p, b, p_all, covar_xyxy in zip(pred.tolist(), box.tolist(), all_scores[si].tolist(), covar_batch):
-                    if covar_xyxy is not None:
-                        # Covariances need to be positive semi-definite, so just transform them here already
-                        for i, covar_tmp in enumerate(covar_xyxy):
-                            covar_tmp = np.array(covar_tmp)
-                            if not is_pos_semidef(covar_tmp):
-                                print('Warning: Converted covar to near PSD')
-                                covar_xyxy[i] = get_near_psd(covar_tmp).tolist()
+                        scale_coords(im[si].shape[1:], sampled_boxes.reshape(-1, 4), shapes[si][0], shapes[si][1])
 
-                    jdict.append({'image_id': image_id,
-                                  'category_id': coco91class[int(p[5])],
-                                  'bbox': [round(x, 3) for x in b],
-                                  'score': round(p[4], 5),
-                                  'all_scores': [round(x, 5) for x in p_all],
-                                  'covars': covar_xyxy})
-            # Predictions
-         #   if single_cls:
-          #      pred[:, 5] = 0
-          #  predn = pred.clone()
-          #  scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
+                        # It will have 2 covariances matrices of 2X2 for each one of the two xy coordinates
+                        covar_batch = torch.zeros(sampled_boxes.shape[0], 2, 2, 2)
+                        for det_id in range(sampled_boxes.shape[0]):
+                            covar_batch[det_id, 0, ...] = cov(sampled_boxes[det_id, :, :2])
+                            covar_batch[det_id, 1, ...] = cov(sampled_boxes[det_id, :, 2:])
 
-            # Evaluate
-            if nl:
-                tbox = xywh2xyxy(labels[:, 1:5])  # target boxes
-                scale_coords(im[si].shape[1:], tbox, shape, shapes[si][1])  # native-space labels
-                labelsn = torch.cat((labels[:, 0:1], tbox), 1)  # native-space labels
-                correct = process_batch(predn, labelsn, iouv)
-                if plots:
-                    confusion_matrix.process_batch(predn, labelsn)
+                        # Rounding it for smaller size
+                        covar_batch = np.around(covar_batch.numpy(), 5).tolist()
+                    else:
+                        # Just dummy covars for the json zip() down below
+                        covar_batch = [None] * pred.shape[0]
+
+                    for p, b, p_all, covar_xyxy in zip(pred.tolist(), box.tolist(), all_scores[si].tolist(),
+                                                       covar_batch):
+                        if covar_xyxy is not None:
+                            # Covariances need to be positive semi-definite, so just transform them here already
+                            for i, covar_tmp in enumerate(covar_xyxy):
+                                covar_tmp = np.array(covar_tmp)
+                                if not is_pos_semidef(covar_tmp):
+                                    print('Warning: Converted covar to near PSD')
+                                    covar_xyxy[i] = get_near_psd(covar_tmp).tolist()
+
+                        jdict.append({'image_id': image_id,
+                                      'category_id': coco91class[int(p[5])],
+                                      'bbox': [round(x, 3) for x in b],
+                                      'score': round(p[4], 5),
+                                      'all_scores': [round(x, 5) for x in p_all],
+                                      'covars': covar_xyxy})
+
+                # Assign all predictions as incorrect
+                correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
+                if nl and not only_inference:
+                    detected = []  # target indices
+                    tcls_tensor = labels[:, 0]
+
+                    # target boxes
+                    tbox = xywh2xyxy(labels[:, 1:5]) * whwh
+
+                    # Per target class
+                    for cls in torch.unique(tcls_tensor):
+                        ti = (cls == tcls_tensor).nonzero().view(-1)  # target indices
+                        pi = (cls == pred[:, 5]).nonzero().view(-1)  # prediction indices
+
+                        # Search for detections
+                        if pi.shape[0]:
+                            # Prediction to target ious
+                            ious, i = box_iou(pred[pi, :4], tbox[ti]).max(1)  # best ious, indices
+
+                            # Append detections
+                            for j in (ious > iouv[0]).nonzero():
+                                d = ti[i[j]]  # detected target
+                                if d not in detected:
+                                    detected.append(d)
+                                    correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
+                                    if len(detected) == nl:  # all targets already located in image
+                                        break
+
+                # Append statistics (correct, conf, pcls, tcls)
+                stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+
+            # Plot images for batch
+            if batch_i < 1:
+                if not only_inference:
+                    f = f'output/batch_figures/test_batch_{name}_{conf_thres}_{iou_thres}_%g_gt.jpg' % batch_i  # filename
+                    plot_images(imgs, targets, paths=paths, names=names, fname=f,
+                                max_subplots=batch_size)  # ground truth
+                f = f'output/batch_figures/test_batch_{name}_{conf_thres}_{iou_thres}_%g_pred.jpg' % batch_i
+                plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f,
+                            max_subplots=batch_size)  # predictions
+
+        if not only_inference:
+            # Compute statistics
+            stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+            if len(stats):
+                p, r, ap, f1, ap_class = ap_per_class(*stats)
+                if niou > 1:
+                    p, r, ap, f1 = p[:, 0], r[:, 0], ap.mean(1), ap[:, 0]  # [P, R, AP@0.5:0.95, AP@0.5]
+                mp, mr, map, mf1 = p.mean(), r.mean(), ap.mean(), f1.mean()
+                nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
             else:
-                correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
-            stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
-           #  if save_json:
-            # Save/log
-          #  if save_txt:
-          #      save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / (path.stem + '.txt'))
-           # if save_json:
-             #   save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
-          #  callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
+                nt = torch.zeros(1)
 
-        # Plot images
-        if plots and batch_i < 3:
-            f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
-            f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
+            # Print results
+            pf = '%20s' + '%10.3g' * 6  # print format
+            print(pf % ('all', seen, nt.sum(), mp, mr, map, mf1))
 
-    # Compute metrics
-    stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-    if len(stats) and stats[0].any():
-        tp, fp, p, r, f1, ap, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
-        ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
-        mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
-        nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
-    else:
-        nt = torch.zeros(1)
+            # Print results per class
+            if verbose and nc > 1 and len(stats):
+                for i, c in enumerate(ap_class):
+                    print(pf % (names[c], seen, nt[c], p[i], r[i], ap[i], f1[i]))
 
-    # Print results
-    pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
-    LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+        # Print speeds
+        if verbose or save_json:
+            t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz, imgsz, batch_size)  # tuple
+            print('Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t)
 
-    # Print results per class
-    if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
+        # Save JSON
+        if save_json and len(jdict):
+
+            with open(f'output/dets_{name}_{conf_thres}_{iou_thres}.json', 'w') as file:
+                json.dump(jdict, file)
+
+            '''
+            No need for this part as it will be evaluated later
+            try:
+                from pycocotools.coco import COCO
+                from pycocotools.cocoeval import COCOeval
+                # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
+                cocoGt = COCO(glob.glob(data['instances_path'])[0])  # initialize COCO ground truth api
+                cocoDt = cocoGt.loadRes(f'output/dets_{name}_{conf_thres}_{iou_thres}.json')  # initialize COCO pred api
+                cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+                cocoEval.params.imgIds = imgIds  # [:32]  # only evaluate these images
+                cocoEval.evaluate()
+                cocoEval.accumulate()
+                cocoEval.summarize()
+                # mf1, map = cocoEval.stats[:2]  # update to pycocotools results (mAP@0.5:0.95, mAP@0.5)
+            except Exception as e:
+                print(e)
+                print('WARNING: pycocotools must be installed with numpy==1.17 to run correctly. '
+                      'See https://github.com/cocodataset/cocoapi/issues/356')
+            '''
+            del jdict
+            print('Converting to RVC1 format...')
+            convert_coco_det_to_rvc_det(det_filename=f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
+                                        gt_filename=glob.glob(data['instances_path'])[0],
+                                        save_filename=f'output/dets_converted_{name}_{conf_thres}_{iou_thres}.json')
+
+        # Return results
+        maps = np.zeros(nc) + map
         for i, c in enumerate(ap_class):
-            LOGGER.info(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
-
-    # Print speeds
-    t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
-    if not training:
-        shape = (batch_size, 3, imgsz, imgsz)
-        LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {shape}' % t)
-
-    # Plots
-    if plots:
-        confusion_matrix.plot(save_dir=save_dir, names=list(names.values()))
-        callbacks.run('on_val_end')
-
-    # Save JSON
-    if save_json and len(jdict):
-        print(f'\nSaving {len(jdict)} detections...')
-        print('\nCOCO mAP with pycocotools...')
-        imgIds = [int(Path(x).stem.split('_')[-1]) for x in dataloader.dataset.img_files]
-        with open(f'output/dets_{name}_{conf_thres}_{iou_thres}.json', 'w') as file:
-            json.dump(jdict, file)
-        '''
-        try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
-            check_requirements(['pycocotools'])
-            from pycocotools.coco import COCO
-            from pycocotools.cocoeval import COCOeval
-
-            anno = COCO(anno_json)  # init annotations api
-            pred = anno.loadRes(pred_json)  # init predictions api
-            eval = COCOeval(anno, pred, 'bbox')
-            if is_coco:
-                eval.params.imgIds = [int(Path(x).stem) for x in dataloader.dataset.im_files]  # image IDs to evaluate
-            eval.evaluate()
-            eval.accumulate()
-            eval.summarize()
-            map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
-        except Exception as e:
-            LOGGER.info(f'pycocotools unable to run: {e}')
-        '''''
-    # Return results
-        del jdict
-        print('Converting to RVC1 format...')
-        convert_coco_det_to_rvc_det(det_filename=f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
-                                    gt_filename=glob.glob(data['instances_path'])[0],
-                                    save_filename=f'output/dets_converted_{name}_{conf_thres}_{iou_thres}.json')
-    model.float()  # for training
-    if not training:
-        s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
-        LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
-    maps = np.zeros(nc) + map
-    for i, c in enumerate(ap_class):
-        maps[c] = ap[i]
-    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
-
+            maps[c] = ap[i]
+        return (mp, mr, map, mf1, *(loss.cpu() / len(dataloader)).tolist()), maps
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--batch-size', type=int, default=32, help='batch size')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'best.pt', help='model.pt path(s)')
+    parser.add_argument('--batch-size', type=int, default=2, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
