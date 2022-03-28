@@ -36,11 +36,12 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.common import DetectMultiBackend
+from models.yolo import Model
 from utils.callbacks import Callbacks
 from utils.datasets import create_dataloader
 from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check_requirements, check_yaml,
                            coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
-                           scale_coords, xywh2xyxy, xyxy2xywh)
+                           scale_coords, xywh2xyxy, xyxy2xywh, intersect_dicts)
 from utils.metrics import ConfusionMatrix, ap_per_class
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
@@ -115,12 +116,13 @@ def run(data,
         half=True,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         model=None,
+        num_samples=1,
         dataloader=None,
         save_dir=Path(''),
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
-        ):
+        cfg=None):
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -135,23 +137,28 @@ def run(data,
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
         # Load model
-        model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
-        stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+        #model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+        #stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
+
+        ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+        model = Model(cfg).to(device)  # create
+        exclude = []  # exclude keys
+        csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
+        csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
+        model.load_state_dict(csd, strict=False)  # load
+        LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
+        stride=max(int(model.stride.max()), 32)
         imgsz = check_img_size(imgsz, s=stride)  # check image size
-        half = model.fp16  # FP16 supported on limited backends with CUDA
-        if engine:
-            batch_size = model.batch_size
-        else:
-            device = model.device
-            if not (pt or jit):
-                batch_size = 1  # export.py models default to batch-size 1
-                LOGGER.info(f'Forcing --batch-size 1 square inference (1,3,{imgsz},{imgsz}) for non-PyTorch models')
+        half &= device.type != 'cpu'  # half precision only supported on CUDA
+        if half:
+            model.half()
 
         # Data
         data = check_dataset(data)  # check
 
     # Configure
     model.eval()
+    model[-1].train() #enable dropout
 
     cuda = device.type != 'cpu'
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
@@ -161,9 +168,9 @@ def run(data,
 
     # Dataloader
     if not training:
-        model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
+        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # warmup
         pad = 0.0 if task in ('speed', 'benchmark') else 0.5
-        rect = False if task == 'benchmark' else pt  # square inference for benchmarks
+        rect = False if task == 'benchmark' else True  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=rect,
                                        workers=workers, prefix=colorstr(f'{task}: '))[0]
@@ -188,20 +195,34 @@ def run(data,
         t2 = time_sync()
         dt[0] += t2 - t1
 
-        # Inference
-        out, train_out = model(im) if training else model(im, augment=augment, val=True)  # inference, loss outputs
-        dt[1] += time_sync() - t2
+        with torch.no_grad():
+            # Inference
+            if num_samples == 1:
+                out, train_out = model(im) if training else model(im, augment=augment,
+                                                                  val=True)  # inference, loss outputs
+            elif num_samples > 1:
+                infs_all = []
+                for i in range(num_samples):
+                    out, _ = model(im, augment=augment, val=True)
+                    infs_all.append(out.unsqueeze(2))
+                inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+                infs_all.insert(0, inf_mean)
+                inf_out = torch.cat(infs_all, dim=2)
 
-        # Loss
-        if compute_loss:
-            loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
+            dt[1] += time_sync() - t2
 
-        # NMS
-        targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
-        lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
-        t3 = time_sync()
-        out, all_scores, sampled_coords = non_max_suppression(out, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
-        dt[2] += time_sync() - t3
+            # Loss
+            if compute_loss:
+                loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
+
+            # NMS
+            targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
+
+            t3 = time_sync()
+            out, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
+                                                                  multi_label=True,
+                                                                  max_width=width, max_height=height)
+            dt[2] += time_sync() - t3
 
         # Metrics
         for si, pred in enumerate(out):
@@ -215,12 +236,58 @@ def run(data,
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
                 continue
+            if save_json:
 
+                # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
+                image_id = int(Path(paths[si]).stem.split('_')[-1])
+                box = pred[:, :4].clone()  # xyxy
+                scale_coords(imgs[si].shape[1:], box, shapes[si][0], shapes[si][1])  # to original shape
+                box = xyxy2xywh(box)  # xywh
+                box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
+
+                # Getting covariances
+                # The transformations to coordinates follow the ones that are done below here after the if clause
+                if num_samples > 1:
+                    # output: BS(list) x NUM_DETECTIONS x 6
+                    # sampled_coords : BS(list) x NUM_DETECTIONS x NUM_SAMPLES x 4
+                    # sampled_boxes : NUM_DETECTIONS x NUM_SAMPLES x 4
+                    sampled_boxes = xywh2xyxy(sampled_coords[si].reshape(-1, 4)).reshape(sampled_coords[si].shape)
+                    clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
+
+                    scale_coords(imgs[si].shape[1:], sampled_boxes.reshape(-1, 4), shapes[si][0], shapes[si][1])
+
+                    # It will have 2 covariances matrices of 2X2 for each one of the two xy coordinates
+                    covar_batch = torch.zeros(sampled_boxes.shape[0], 2, 2, 2)
+                    for det_id in range(sampled_boxes.shape[0]):
+                        covar_batch[det_id, 0, ...] = cov(sampled_boxes[det_id, :, :2])
+                        covar_batch[det_id, 1, ...] = cov(sampled_boxes[det_id, :, 2:])
+
+                    # Rounding it for smaller size
+                    covar_batch = np.around(covar_batch.numpy(), 5).tolist()
+                else:
+                    # Just dummy covars for the json zip() down below
+                    covar_batch = [None] * pred.shape[0]
+
+                for p, b, p_all, covar_xyxy in zip(pred.tolist(), box.tolist(), all_scores[si].tolist(), covar_batch):
+                    if covar_xyxy is not None:
+                        # Covariances need to be positive semi-definite, so just transform them here already
+                        for i, covar_tmp in enumerate(covar_xyxy):
+                            covar_tmp = np.array(covar_tmp)
+                            if not is_pos_semidef(covar_tmp):
+                                print('Warning: Converted covar to near PSD')
+                                covar_xyxy[i] = get_near_psd(covar_tmp).tolist()
+
+                    jdict.append({'image_id': image_id,
+                                  'category_id': coco91class[int(p[5])],
+                                  'bbox': [round(x, 3) for x in b],
+                                  'score': round(p[4], 5),
+                                  'all_scores': [round(x, 5) for x in p_all],
+                                  'covars': covar_xyxy})
             # Predictions
-            if single_cls:
-                pred[:, 5] = 0
-            predn = pred.clone()
-            scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
+         #   if single_cls:
+          #      pred[:, 5] = 0
+          #  predn = pred.clone()
+          #  scale_coords(im[si].shape[1:], predn[:, :4], shape, shapes[si][1])  # native-space pred
 
             # Evaluate
             if nl:
@@ -233,13 +300,13 @@ def run(data,
             else:
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))  # (correct, conf, pcls, tcls)
-
+           #  if save_json:
             # Save/log
-            if save_txt:
-                save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / (path.stem + '.txt'))
-            if save_json:
-                save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
-            callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
+          #  if save_txt:
+          #      save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / (path.stem + '.txt'))
+           # if save_json:
+             #   save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
+          #  callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
 
         # Plot images
         if plots and batch_i < 3:
@@ -280,13 +347,12 @@ def run(data,
 
     # Save JSON
     if save_json and len(jdict):
-        w = Path(weights[0] if isinstance(weights, list) else weights).stem if weights is not None else ''  # weights
-        anno_json = str(Path(data.get('path', '../coco')) / 'annotations/instances_val2017.json')  # annotations json
-        pred_json = str(save_dir / f"{w}_predictions.json")  # predictions json
-        LOGGER.info(f'\nEvaluating pycocotools mAP... saving {pred_json}...')
-        with open(pred_json, 'w') as f:
-            json.dump(jdict, f)
-
+        print(f'\nSaving {len(jdict)} detections...')
+        print('\nCOCO mAP with pycocotools...')
+        imgIds = [int(Path(x).stem.split('_')[-1]) for x in dataloader.dataset.img_files]
+        with open(f'output/dets_{name}_{conf_thres}_{iou_thres}.json', 'w') as file:
+            json.dump(jdict, file)
+        '''
         try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
             check_requirements(['pycocotools'])
             from pycocotools.coco import COCO
@@ -303,8 +369,13 @@ def run(data,
             map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
         except Exception as e:
             LOGGER.info(f'pycocotools unable to run: {e}')
-
+        '''''
     # Return results
+        del jdict
+        print('Converting to RVC1 format...')
+        convert_coco_det_to_rvc_det(det_filename=f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
+                                    gt_filename=glob.glob(data['instances_path'])[0],
+                                    save_filename=f'output/dets_converted_{name}_{conf_thres}_{iou_thres}.json')
     model.float()  # for training
     if not training:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
@@ -338,6 +409,8 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
+    parser.add_argument('--num_samples', type=int, default=1, help='How many times to sample if doing MC-Dropout')
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')

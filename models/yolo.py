@@ -44,8 +44,8 @@ class Detect(nn.Module):
         self.anchor_grid = [torch.zeros(1)] * self.nl  # init anchor grid
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
         self.mcdropout_rate = mcdropout_rate
-        self.dropout = nn.Dropout(self.mcdropout_rate)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
+        self.dropout = nn.Dropout(self.mcdropout_rate)
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
     def forward(self, x):
@@ -244,7 +244,7 @@ class Model(nn.Module):
 
 def parse_model(d, ch):  # model_dict, input_channels(3)
     LOGGER.info(f"\n{'':>3}{'from':>18}{'n':>3}{'params':>10}  {'module':<40}{'arguments':<30}")
-    anchors, nc, gd, gw ,mc_dropout_rate, num_sample= d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d['mcdropout_rate'], d['num_sample']
+    anchors, nc, gd, gw ,mc_dropout_rate= d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d['mcdropout_rate']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
@@ -277,7 +277,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
             args.append(mc_dropout_rate)
-            args.append(num_sample)
+
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:

@@ -112,6 +112,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         im = torch.from_numpy(im).to(device)
         im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0
+
         if len(im.shape) == 3:
             im = im[None]  # expand for batch dim
         t2 = time_sync()
@@ -124,7 +125,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
         dt[1] += t3 - t2
 
         # NMS
-        pred, all_scores, sampled_coords = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+        pred, all_scores, sampled_coords = non_max_suppression(pred, conf_thres=conf_thres, iou_thres=iou_thres)
         dt[2] += time_sync() - t3
 
         # Second-stage classifier (optional)

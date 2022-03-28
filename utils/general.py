@@ -805,66 +805,50 @@ def increment_path(path, exist_ok=False, sep='', mkdir=False):
         path.mkdir(parents=True, exist_ok=True)  # make directory
     return path
 
-def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, multi_label=False,
-                        labels=(), max_det=300):
-    """
-    Runs Non-Maximum Suppression (NMS) on inference results
 
-    Returns:
-         list of detections, on (n,6) tensor per image [xyxy, conf, cls]
+def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=False, max_width=2000, max_height=2000,
+                        get_unknowns=False,
+                        classes=None, agnostic=False):
     """
+    Performs  Non-Maximum Suppression on inference results
+    Returns detections with shape:
+        n X 6: n X (x1, y1, x2, y2, conf, cls)
     """
-    prediction has shape (batch_size X detections X 85) for without mc-dropout or (batch_size X detections X (1 + sampled_tensors) X 85) otherwise
-    Consider that the first "detection" (ie [:, :, 0, :]) is the one to be used to filter out using NMS, which corresponds to the only prediction in
-    the non-mcdropout case, and the averaged prediction in the MC-dropout case
-    """
+
+    # prediction has shape (batch_size X detections X 85) for without mc-dropout or (batch_size X detections X (1 + sampled_tensors) X 85) otherwise
+    # Consider that the first "detection" (ie [:, :, 0, :]) is the one to be used to filter out using NMS, which corresponds to the only prediction in
+    #    the non-mcdropout case, and the averaged prediction in the MC-dropout case
+    #
+    # The documentation here sometimes considers "x" to be 2-D, just as a simplification of x_all[:, 0, :]
+
     # If dimension is 3, adding dummy dimension to comply with rest of code
     if prediction.dim() == 3:
         prediction = prediction.unsqueeze(2)
 
-    nc = prediction.shape[-1] - 5  # number of classes
-
-    # Checks
-    assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
-    assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
-
     # Settings
-    min_wh, max_wh = 2, 7680  # (pixels) minimum and maximum box width and height
-    max_width, max_height = 2000, 2000
-    max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
-    #time_limit = 10.0  # seconds to quit after
-    redundant = True  # require redundant detections
-    multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
-    merge = False  # use merge-NMS
+    # In ultralytics' repository "merge" is True, but I've changes this to False, some discussion here: https://github.com/ultralytics/yolov3/issues/679
+    merge = False  # merge for best mAP
+    min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
+    # time_limit = 10.0  # seconds to quit after
 
     t = time.time()
+    nc = prediction[0].shape[-1] - 5  # number of classes
+    multi_label &= nc > 1  # multiple labels per box
     output = [None] * prediction.shape[0]
     all_scores = [None] * prediction.shape[0]
-
     if prediction.shape[2] > 1:
         sampled_coords = [None] * prediction.shape[0]
     else:
         sampled_coords = None
-
     for xi, x_all in enumerate(prediction):  # image index, image inference
-        # Apply constraints
-        x_all = x_all[((x_all[:, 0, 2:4] > min_wh) & (x_all[:, 0, 2:4] < max_wh)).all(1)]  # width-height
-        x_all = x_all[x_all[:, 0, 4] > conf_thres]  # confidence
 
-        # Cat apriori labels if autolabelling
-        """
-        if labels and len(labels[xi]):
-            lb = labels[xi]
-            v = torch.zeros((len(lb), nc + 5), device=x.device)
-            v[:, :4] = lb[:, 1:5]  # box
-            v[:, 4] = 1.0  # conf
-            v[range(len(lb)), lb[:, 0].long() + 5] = 1.0  # cls
-            x = torch.cat((x, v), 0)
-        """
+        # Apply constraints
+        x_all = x_all[x_all[:, 0, 4] > conf_thres]  # confidence
+        x_all = x_all[((x_all[:, 0, 2:4] > min_wh) & (x_all[:, 0, 2:4] < max_wh)).all(1)]  # width-height
+
         # If none remain process next image
         if not x_all.shape[0]:
             continue
-
 
         # Compute conf
         x_all_orig_shape = x_all.shape
@@ -873,40 +857,69 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         x_all[..., 5:] *= x_all[..., 4:5]  # conf = obj_conf * cls_conf
         x_all = x_all.reshape(x_all_orig_shape)
 
+        if get_unknowns:
+            # Getting bboxes only when all the labels are predicted with prob below 0.5
+            x_all = x_all[(x_all[:, 0, 5:] < 0.5).all(1) & (x_all[:, 0, 5:] > 0.1).any(1)]
+            # x_all = x_all[(x_all[:, 0, 5:] < 0.5).all(1)]
+            # x_all = x_all[(x_all[:, 0, 5:] < 0.2).all(1) & (x_all[:, 0, 5:] > 0.1).any(1)]
+            if x_all.shape[0] == 0:
+                continue
+
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x_all[:, 0, :4])
+
         # Removing bboxes out of image limits
         wrong_bboxes = (box < 0).any(1) | (box[:, [0, 2]] >= max_width).any(1) | (box[:, [1, 3]] >= max_height).any(1)
         box = box[~wrong_bboxes]
         x_all = x_all[~wrong_bboxes]
 
+        # If none remain process next image
+        n = x_all.shape[0]  # number of boxes
+        if not n:
+            continue
+
+        # The next parts of code will filter labels according to confidence threshold,
+        #   so, if get_unknowns is True, just get everything
+        if get_unknowns:
+            conf_thres = 0
+
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
+            # Getting the indices (i and j in the 2D-vector x[:, 5:]) where classes are above certain conf threshold
+            # i will give an index of a detection, while j will give the index of the class above the threshold
+            # This will get all classes above conf_thres even if it is in the same bbox
             i, j = (x_all[:, 0, 5:] > conf_thres).nonzero().t()
+
+            # box[i] will now be of shape i X 4, as it will have the bboxes (4 coordinates) of all the good detections as in i
+            # x[i, j+5] will have the best class confidence for the detection i. With .unsqueeze(1) will have shape i X 1
+            # j has the same shape as i as it is the best class for each i, thus .unsqueeze(1) will make it i x 1
+            # concatenation will make it in the right format for return, with i X 6 (as in the documentation of this function)
             x = torch.cat((box[i], x_all[i, 0, j + 5].unsqueeze(1), j.float().unsqueeze(1)), 1)
             x_all = x_all[i, ...]
-
         else:  # best class only
             conf, j = x_all[:, 0, 5:].max(1)
             x = torch.cat((box, conf.unsqueeze(1), j.float().unsqueeze(1)), 1)[conf > conf_thres]
             x_all = x_all[conf > conf_thres, ...]
 
         # Filter by class
-        if classes is not None:
+        if classes:
             x = x[(j.view(-1, 1) == torch.tensor(classes, device=j.device)).any(1)]
 
         # Apply finite constraint
         # if not torch.isfinite(x).all():
         #     x = x[torch.isfinite(x).all(1)]
 
-        # Check shape
+        # If none remain process next image
         n = x.shape[0]  # number of boxes
-        if not n:  # no boxes
+        if not n:
             continue
+
+        # Sort by confidence
+        # x = x[x[:, 4].argsort(descending=True)]
 
         # Batched NMS
         # c will contain the class for each detection i
-        c = x[:, 5] * 0 if agnostic else x[:, 5] # classes
+        c = x[:, 5] * 0 if agnostic else x[:, 5]  # classes
         # boxes will contain all the detections bboxes (shape i X 4), and those will be passed to torchvision NMS operator
         # In order to avoid removing bboxes with big iou but classifying different classes, the bounding boxes are shifted/offseted
         # This offset is done by "c.view(-1, 1) * max_wh", which multiplies each discrete class by the mximum width/height allowed,
@@ -914,16 +927,30 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         #    this way,we are able to clearly separate all the bounding boxes in a way that bboxes with similar coordinates but
         #    with different classes are never clustered together for the nms() function
         boxes, scores = x[:, :4].clone() + c.view(-1, 1) * max_wh, x[:, 4]  # boxes (offset by class), scores
+        i = torchvision.ops.boxes.nms(boxes, scores, iou_thres)
 
-        i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+        # This "merge" won't happen because of beginning of this function and later changes
+        # if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
+        #    try:  # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
+        #        iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
+        #        weights = iou * scores[None]  # box weights, None to index a tensor basically adds a new dimension
+        #        x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
+        #        # i = i[iou.sum(1) > 1]  # require redundancy
+        #    except:  # possible CUDA error https://github.com/ultralytics/yolov3/issues/1139
+        #        print('ERROR at non_max_suppression merge:', x, i, x.shape, i.shape)
+        #        pass
 
         output[xi] = x[i]
+
         x_all = x_all[i, :, :]
         all_scores[xi] = x_all[:, 0, 5:]
 
         if prediction.shape[2] > 1:
             sampled_coords[xi] = x_all[:, 1:, :4]
 
+        # I've removed time_limit to guarantee that everything is processed
+        # if (time.time() - t) > time_limit:
+        #    break  # time limit exceeded
 
     return output, all_scores, sampled_coords
 
