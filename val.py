@@ -47,59 +47,13 @@ from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check
                            coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
                            scale_coords, xywh2xyxy, xyxy2xywh, intersect_dicts,clip_coords,cov,is_pos_semidef,get_near_psd)
 from utils.metrics import  ap_per_class
-from utils.plots import output_to_target, plot_images, plot_val_study
+from utils.plots import output_to_target, plot_images, plot_val_study,
 from utils.torch_utils import select_device, time_sync
 
 
-def save_one_txt(predn, save_conf, shape, file):
-    # Save one txt result
-    gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
-    for *xyxy, conf, cls in predn.tolist():
-        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
-        with open(file, 'a') as f:
-            f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
-
-def save_one_json(predn, jdict, path, class_map):
-    # Save one JSON result {"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}
-    image_id = int(path.stem) if path.stem.isnumeric() else path.stem
-    box = xyxy2xywh(predn[:, :4])  # xywh
-    box[:, :2] -= box[:, 2:] / 2  # xy center to top-left corner
-    for p, b in zip(predn.tolist(), box.tolist()):
-        jdict.append({'image_id': image_id,
-                      'category_id': class_map[int(p[5])],
-                      'bbox': [round(x, 3) for x in b],
-                      'score': round(p[4], 5)})
-
-
-def process_batch(detections, labels, iouv):
-    """
-    Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
-    Arguments:
-        detections (Array[N, 6]), x1, y1, x2, y2, conf, class
-        labels (Array[M, 5]), class, x1, y1, x2, y2
-    Returns:
-        correct (Array[N, 10]), for 10 IoU levels
-    """
-    correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
-    iou = box_iou(labels[:, 1:], detections[:, :4])
-    x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
-    if x[0].shape[0]:
-        matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
-        if x[0].shape[0] > 1:
-            matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-            # matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-        matches = torch.from_numpy(matches).to(iouv.device)
-        correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
-    return correct
-
-
-@torch.no_grad()
 def run(data,
-        weights=ROOT / 'best.pt',  # model.pt path(s)
+        weights=None,  # model.pt path(s)
         batch_size=32,  # batch size
         imgsz=640,  # inference size (pixels)
         conf_thres=0.001,  # confidence threshold
@@ -142,12 +96,9 @@ def run(data,
         save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-        # Load model
-        #model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
-        #stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
-
-        ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
-        model = Model(cfg).to(device)  # create
+        model = Model(cfg).to(device)
+        ckpt = torch.load(weights, map_location='cpu')
+          # create
         exclude = []  # exclude keys
         csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
@@ -202,36 +153,28 @@ def run(data,
         nb, _, height, width = im.shape  # batch size, channels, height, width
         whwh = torch.Tensor([width, height, width, height]).to(device)
 
+        with torch.no_grad():
+            t = time_sync()
+                # Inference
+            if num_samples == 1:
+                 inf_out, train_out = model(im, augment=augment) # inference, loss outputs
+            elif num_samples > 1:
+                 infs_all = []
+                 for i in range(num_samples):
+                        out, _ = model(im, augment=augment)
+                        infs_all.append(out.unsqueeze(2))
+                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+                 infs_all.insert(0, inf_mean)
+                 inf_out = torch.cat(infs_all, dim=2)
 
+            t0 += time_sync() - t
 
-
-        t = time_sync()
-            # Inference
-        if num_samples == 1:
-             inf_out, train_out = model(im) if training else model(im, augment=augment) # inference, loss outputs
-        elif num_samples > 1:
-             infs_all = []
-             for i in range(num_samples):
-                    out, _ = model(im, augment=augment)
-                    infs_all.append(out.unsqueeze(2))
-             inf_mean = torch.mean(torch.stack(infs_all), dim=0)
-             infs_all.insert(0, inf_mean)
-             inf_out = torch.cat(infs_all, dim=2)
-
-        t0 += time_sync() - t
-
-            # Loss
-        if compute_loss:
-              loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
-
-            # NMS
-        targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
-
-        t = time_sync()
-        output, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
-                                                                  multi_label=True,
-                                                                  max_width=width, max_height=height)
-        t1 += time_sync() - t
+                # Loss
+            t = time_sync()
+            output, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
+                                                                      multi_label=True,
+                                                                      max_width=width, max_height=height)
+            t1 += time_sync() - t
 
         for si, pred in enumerate(output):
              labels = targets[targets[:, 0] == si, 1:]
@@ -301,7 +244,7 @@ def run(data,
 
              # Assign all predictions as incorrect
              correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
-             if nl and not only_inference:
+             if nl:
                  detected = []  # target indices
                  tcls_tensor = labels[:, 0]
 
@@ -330,32 +273,32 @@ def run(data,
              # Append statistics (correct, conf, pcls, tcls)
              stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
-        if plots and batch_i < 3:
-            f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
-            f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(output), paths, f, names), daemon=True).start()
+        if batch_i < 1:
+            f = 'test_batch%g_gt.jpg' % batch_i  # filename
+            plot_images(img, targets, paths, f, names)  # ground truth
+            f = 'test_batch%g_pred.jpg' % batch_i
+            plot_images(img, output_to_target(output, width, height), paths, f, names)  # predictions
 
-    if not only_inference:
+
             # Compute statistics
-            stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-            if len(stats):
-                p, r, ap, f1, ap_class = ap_per_class(*stats)
-                if niou > 1:
-                    p, r, ap, f1 = p[:, 0], r[:, 0], ap.mean(1), ap[:, 0]  # [P, R, AP@0.5:0.95, AP@0.5]
-                mp, mr, map, mf1 = p.mean(), r.mean(), ap.mean(), f1.mean()
-                nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
-            else:
-                nt = torch.zeros(1)
+    stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
+     if len(stats):
+          p, r, ap, f1, ap_class = ap_per_class(*stats)
+
+          p, r, ap, f1 = p[:, 0], r[:, 0], ap.mean(1), ap[:, 0]  # [P, R, AP@0.5:0.95, AP@0.5]
+          mp, mr, map, mf1 = p.mean(), r.mean(), ap.mean(), f1.mean()
+          nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
+     else:
+          nt = torch.zeros(1)
 
             # Print results
-            pf = '%20s' + '%10.3g' * 6  # print format
-            print(pf % ('all', seen, nt.sum(), mp, mr, map, mf1))
+     pf = '%20s' + '%10.3g' * 6  # print format
+     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
             # Print results per class
-            if verbose and nc > 1 and len(stats):
-                for i, c in enumerate(ap_class):
-                    print(pf % (names[c], seen, nt[c], p[i], r[i], ap[i], f1[i]))
+     if verbose and nc > 1 and len(stats):
+           for i, c in enumerate(ap_class):
+                print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
         # Print speeds
     if verbose or save_json:
@@ -398,12 +341,12 @@ def run(data,
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
             maps[c] = ap[i]
-    return (mp, mr, map, mf1, *(loss.cpu() / len(dataloader)).tolist()), maps
+    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps,
 
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'best.pt', help='model.pt path(s)')
+    parser.add_argument('--weights', type=str, default='', help='initial weights path')
     parser.add_argument('--batch-size', type=int, default=2, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
