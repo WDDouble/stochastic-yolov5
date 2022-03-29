@@ -81,7 +81,6 @@ def run(data,
         callbacks=Callbacks(),
         compute_loss=None,
         cfg=None,
-        only_inference=False,
         ):
     # Initialize/load model and set device
     training = model is not None
@@ -107,6 +106,7 @@ def run(data,
         stride=max(int(model.stride.max()), 32)
         imgsz = check_img_size(imgsz, s=stride)  # check image size
         half &= device.type != 'cpu'  # half precision only supported on CUDA
+        model.float()
         if half:
             model.half()
 
@@ -138,8 +138,8 @@ def run(data,
 
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%10s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@0.5', 'F1')
-    p, r, f1, mp, mr, map, mf1, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
+    s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+    p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
@@ -282,21 +282,20 @@ def run(data,
 
             # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
-     if len(stats):
-          p, r, ap, f1, ap_class = ap_per_class(*stats)
-
-          p, r, ap, f1 = p[:, 0], r[:, 0], ap.mean(1), ap[:, 0]  # [P, R, AP@0.5:0.95, AP@0.5]
-          mp, mr, map, mf1 = p.mean(), r.mean(), ap.mean(), f1.mean()
-          nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
-     else:
-          nt = torch.zeros(1)
+    if len(stats):
+        p, r, ap, f1, ap_class = ap_per_class(*stats)
+        p, r, ap50, ap = p[:, 0], r[:, 0], ap[:, 0], ap.mean(1)  # [P, R, AP@0.5, AP@0.5:0.95]
+        mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+        nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
+    else:
+        nt = torch.zeros(1)
 
             # Print results
-     pf = '%20s' + '%10.3g' * 6  # print format
-     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    pf = '%20s' + '%10.3g' * 6  # print format
+    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
 
             # Print results per class
-     if verbose and nc > 1 and len(stats):
+    if verbose and nc > 1 and len(stats):
            for i, c in enumerate(ap_class):
                 print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
 
@@ -368,7 +367,7 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
     parser.add_argument('--num_samples', type=int, default=1, help='How many times to sample if doing MC-Dropout')
-    parser.add_argument('--only_inference', action='store_true')
+
 
 
     opt = parser.parse_args()

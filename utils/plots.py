@@ -171,14 +171,29 @@ def butter_lowpass_filtfilt(data, cutoff=1500, fs=50000, order=5):
     return filtfilt(b, a, data)  # forward-backward filter
 
 
-def output_to_target(output):
-    # Convert model output to target format [batch_id, class_id, x, y, w, h, conf]
+def output_to_target(output, width, height):
+    """
+    Convert a YOLO model output to target format
+    [batch_id, class_id, x, y, w, h, conf]
+    """
+    if isinstance(output, torch.Tensor):
+        output = output.cpu().numpy()
+
     targets = []
     for i, o in enumerate(output):
-        for *box, conf, cls in o.cpu().numpy():
-            targets.append([i, cls, *list(*xyxy2xywh(np.array(box)[None])), conf])
-    return np.array(targets)
+        if o is not None:
+            for pred in o:
+                box = pred[:4]
+                w = (box[2] - box[0]) / width
+                h = (box[3] - box[1]) / height
+                x = box[0] / width + w / 2
+                y = box[1] / height + h / 2
+                conf = pred[4]
+                cls = int(pred[5])
 
+                targets.append([i, cls, x, y, w, h, conf])
+
+    return np.array(targets)
 
 def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=640, max_subplots=16):
     tl = 3  # line thickness
