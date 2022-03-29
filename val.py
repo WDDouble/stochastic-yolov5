@@ -23,8 +23,12 @@ import json
 import os
 import sys
 from pathlib import Path
-from threading import Thread
 
+import sys
+sys.path.append('./cocoapi/PythonAPI/')
+
+sys.path.append('./pdq_evaluation')
+from read_files import convert_coco_det_to_rvc_det
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -35,7 +39,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from models.common import DetectMultiBackend
+
 from models.yolo import Model
 from utils.callbacks import Callbacks
 from utils.datasets import create_dataloader
@@ -122,7 +126,9 @@ def run(data,
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
-        cfg=None):
+        cfg=None,
+        only_inference=False,
+        ):
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -187,31 +193,32 @@ def run(data,
     jdict, stats, ap, ap_class = [], [], [], []
     pbar = tqdm(dataloader, desc=s, bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')  # progress bar
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
-        t1 = time_sync()
+
         if cuda:
             im = im.to(device, non_blocking=True)
             targets = targets.to(device)
         im = im.half() if half else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0
         nb, _, height, width = im.shape  # batch size, channels, height, width
-        t2 = time_sync()
-        dt[0] += t2 - t1
+        whwh = torch.Tensor([width, height, width, height]).to(device)
+
+
 
         with torch.no_grad():
+            t = time_sync()
             # Inference
             if num_samples == 1:
-                inf_out, train_out = model(im) if training else model(im, augment=augment,
-                                                                  val=True)  # inference, loss outputs
+                inf_out, train_out = model(im) if training else model(im, augment=augment) # inference, loss outputs
             elif num_samples > 1:
                 infs_all = []
                 for i in range(num_samples):
-                    out, _ = model(im, augment=augment, val=True)
+                    out, _ = model(im, augment=augment)
                     infs_all.append(out.unsqueeze(2))
                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)
                 infs_all.insert(0, inf_mean)
                 inf_out = torch.cat(infs_all, dim=2)
 
-            dt[1] += time_sync() - t2
+            t0 += time_sync() - t
 
             # Loss
             if compute_loss:
@@ -220,32 +227,30 @@ def run(data,
             # NMS
             targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
 
-            t3 = time_sync()
-            out, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
+            t = time_sync()
+            output, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
                                                                   multi_label=True,
                                                                   max_width=width, max_height=height)
-            dt[2] += time_sync() - t3
+            t1 += time_sync() - t
 
-            for si, pred in enumerate(output):
-                labels = targets[targets[:, 0] == si, 1:]
-                nl = len(labels)
-                tcls = labels[:, 0].tolist() if nl else []  # target class
-                seen += 1
+        for si, pred in enumerate(output):
+             labels = targets[targets[:, 0] == si, 1:]
+             nl = len(labels)
+             tcls = labels[:, 0].tolist() if nl else []  # target class
+             seen += 1
 
-                if pred is None:
-                    if nl:
-                        stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
-                    continue
+             if pred is None:
+                  if nl:
+                       stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
+                  continue
 
-                # Append to text file
-                # with open('test.txt', 'a') as file:
-                #    [file.write('%11.5g' * 7 % tuple(x) + '\n') for x in pred]
+
 
                 # Clip boxes to image bounds
-                clip_coords(pred, (height, width))
+             clip_coords(pred, (height, width))
 
                 # Append to pycocotools JSON dictionary
-                if save_json:
+             if save_json:
 
                     # [{"image_id": 42, "category_id": 18, "bbox": [258.15, 41.29, 348.26, 243.78], "score": 0.236}, ...
                     image_id = int(Path(paths[si]).stem.split('_')[-1])
@@ -288,7 +293,7 @@ def run(data,
                                     covar_xyxy[i] = get_near_psd(covar_tmp).tolist()
 
                         jdict.append({'image_id': image_id,
-                                      'category_id': coco91class[int(p[5])],
+                                      'category_id': class_map[int(p[5])],
                                       'bbox': [round(x, 3) for x in b],
                                       'score': round(p[4], 5),
                                       'all_scores': [round(x, 5) for x in p_all],
@@ -296,46 +301,37 @@ def run(data,
 
                 # Assign all predictions as incorrect
                 correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
-                if nl and not only_inference:
-                    detected = []  # target indices
-                    tcls_tensor = labels[:, 0]
+             if nl and not only_inference:
+                 detected = []  # target indices
+                 tcls_tensor = labels[:, 0]
 
-                    # target boxes
-                    tbox = xywh2xyxy(labels[:, 1:5]) * whwh
+                 # target boxes
+                 tbox = xywh2xyxy(labels[:, 1:5]) * whwh
 
-                    # Per target class
-                    for cls in torch.unique(tcls_tensor):
-                        ti = (cls == tcls_tensor).nonzero().view(-1)  # target indices
-                        pi = (cls == pred[:, 5]).nonzero().view(-1)  # prediction indices
+                 # Per target class
+                 for cls in torch.unique(tcls_tensor):
+                     ti = (cls == tcls_tensor).nonzero().view(-1)  # target indices
+                     pi = (cls == pred[:, 5]).nonzero().view(-1)  # prediction indices
 
-                        # Search for detections
-                        if pi.shape[0]:
-                            # Prediction to target ious
-                            ious, i = box_iou(pred[pi, :4], tbox[ti]).max(1)  # best ious, indices
+                     # Search for detections
+                     if pi.shape[0]:
+                         # Prediction to target ious
+                         ious, i = box_iou(pred[pi, :4], tbox[ti]).max(1)  # best ious, indices
 
-                            # Append detections
-                            for j in (ious > iouv[0]).nonzero():
-                                d = ti[i[j]]  # detected target
-                                if d not in detected:
-                                    detected.append(d)
-                                    correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
-                                    if len(detected) == nl:  # all targets already located in image
-                                        break
+                         # Append detections
+                         for j in (ious > iouv[0]).nonzero():
+                             d = ti[i[j]]  # detected target
+                             if d not in detected:
+                                 detected.append(d)
+                                 correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
+                                 if len(detected) == nl:  # all targets already located in image
+                                     break
 
-                # Append statistics (correct, conf, pcls, tcls)
-                stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+             # Append statistics (correct, conf, pcls, tcls)
+             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
-            # Plot images for batch
-            if batch_i < 1:
-                if not only_inference:
-                    f = f'output/batch_figures/test_batch_{name}_{conf_thres}_{iou_thres}_%g_gt.jpg' % batch_i  # filename
-                    plot_images(imgs, targets, paths=paths, names=names, fname=f,
-                                max_subplots=batch_size)  # ground truth
-                f = f'output/batch_figures/test_batch_{name}_{conf_thres}_{iou_thres}_%g_pred.jpg' % batch_i
-                plot_images(imgs, output_to_target(output, width, height), paths=paths, names=names, fname=f,
-                            max_subplots=batch_size)  # predictions
 
-        if not only_inference:
+    if not only_inference:
             # Compute statistics
             stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
             if len(stats):
@@ -357,14 +353,14 @@ def run(data,
                     print(pf % (names[c], seen, nt[c], p[i], r[i], ap[i], f1[i]))
 
         # Print speeds
-        if verbose or save_json:
+    if verbose or save_json:
             t = tuple(x / seen * 1E3 for x in (t0, t1, t0 + t1)) + (imgsz, imgsz, batch_size)  # tuple
             print('Speed: %.1f/%.1f/%.1f ms inference/NMS/total per %gx%g image at batch-size %g' % t)
 
         # Save JSON
-        if save_json and len(jdict):
-
-            with open(f'output/dets_{name}_{conf_thres}_{iou_thres}.json', 'w') as file:
+    if save_json and len(jdict):
+            pred_json = str(save_dir / f"dets_{name}_{conf_thres}_{iou_thres}.json")
+            with open(pred_json, 'w') as file:
                 json.dump(jdict, file)
 
             '''
@@ -386,17 +382,18 @@ def run(data,
                 print('WARNING: pycocotools must be installed with numpy==1.17 to run correctly. '
                       'See https://github.com/cocodataset/cocoapi/issues/356')
             '''
-            del jdict
-            print('Converting to RVC1 format...')
-            convert_coco_det_to_rvc_det(det_filename=f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
+    del jdict
+    print('Converting to RVC1 format...')
+    convert_coco_det_to_rvc_det(det_filename=f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
                                         gt_filename=glob.glob(data['instances_path'])[0],
                                         save_filename=f'output/dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
+
         # Return results
-        maps = np.zeros(nc) + map
-        for i, c in enumerate(ap_class):
+    maps = np.zeros(nc) + map
+    for i, c in enumerate(ap_class):
             maps[c] = ap[i]
-        return (mp, mr, map, mf1, *(loss.cpu() / len(dataloader)).tolist()), maps
+    return (mp, mr, map, mf1, *(loss.cpu() / len(dataloader)).tolist()), maps
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -423,6 +420,9 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
     parser.add_argument('--num_samples', type=int, default=1, help='How many times to sample if doing MC-Dropout')
+    parser.add_argument('--only_inference', action='store_true')
+
+
     opt = parser.parse_args()
     opt.data = check_yaml(opt.data)  # check YAML
     opt.save_json |= opt.data.endswith('coco.yaml')
