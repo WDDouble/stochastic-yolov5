@@ -26,7 +26,7 @@ from pathlib import Path
 
 import sys
 sys.path.append('./cocoapi/PythonAPI/')
-
+from threading import Thread
 sys.path.append('./pdq_evaluation')
 from read_files import convert_coco_det_to_rvc_det
 import numpy as np
@@ -99,7 +99,7 @@ def process_batch(detections, labels, iouv):
 
 @torch.no_grad()
 def run(data,
-        weights=None,  # model.pt path(s)
+        weights=ROOT / 'best.pt',  # model.pt path(s)
         batch_size=32,  # batch size
         imgsz=640,  # inference size (pixels)
         conf_thres=0.001,  # confidence threshold
@@ -334,7 +334,7 @@ def run(data,
             f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
             Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
             f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
+            Thread(target=plot_images, args=(im, output_to_target(output), paths, f, names), daemon=True).start()
 
     if not only_inference:
             # Compute statistics
