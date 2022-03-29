@@ -47,7 +47,7 @@ from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check
                            coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
                            scale_coords, xywh2xyxy, xyxy2xywh, intersect_dicts,clip_coords,cov,is_pos_semidef,get_near_psd)
 from utils.metrics import  ap_per_class
-from utils.plots import output_to_target, plot_images, plot_val_study,
+from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
 
 
@@ -273,11 +273,11 @@ def run(data,
              # Append statistics (correct, conf, pcls, tcls)
              stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
-        if batch_i < 1:
-            f = 'test_batch%g_gt.jpg' % batch_i  # filename
-            plot_images(img, targets, paths, f, names)  # ground truth
-            f = 'test_batch%g_pred.jpg' % batch_i
-            plot_images(img, output_to_target(output, width, height), paths, f, names)  # predictions
+        if batch_i < 3:
+            f = save_dir / f'test_batch{batch_i}_labels.jpg'
+            plot_images(im, targets, paths=paths, names=names, fname=f, max_subplots=batch_size)  # ground truth
+            f = save_dir / f'test_batch{batch_i}_pred.jpg'
+            plot_images(im, output_to_target(output, width, height), paths=paths, names=names, fname=f, max_subplots=batch_size)  # predictions
 
 
             # Compute statistics

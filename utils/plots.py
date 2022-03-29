@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sn
 import torch
+import torch.nn as nn
+import torchvision
 from PIL import Image, ImageDraw, ImageFont
 
 from utils.general import (CONFIG_DIR, FONT, LOGGER, Timeout, check_font, check_requirements, clip_coords,
@@ -193,7 +195,7 @@ def output_to_target(output, width, height):
 
                 targets.append([i, cls, x, y, w, h, conf])
 
-    return np.array(targets)
+    return np.array(torch.tensor(targets, device='cpu'))
 
 def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max_size=640, max_subplots=16):
     tl = 3  # line thickness
@@ -273,7 +275,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None, max
 
     if fname is not None:
         mosaic = cv2.resize(mosaic, (int(ns * w * 0.5), int(ns * h * 0.5)), interpolation=cv2.INTER_AREA)
-        cv2.imwrite(fname, cv2.cvtColor(mosaic, cv2.COLOR_BGR2RGB))
+        cv2.imwrite(str(fname), cv2.cvtColor(mosaic, cv2.COLOR_BGR2RGB))
 
     return mosaic
 
