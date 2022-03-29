@@ -204,34 +204,34 @@ def run(data,
 
 
 
-        with torch.no_grad():
-            t = time_sync()
+
+        t = time_sync()
             # Inference
-            if num_samples == 1:
-                inf_out, train_out = model(im) if training else model(im, augment=augment) # inference, loss outputs
-            elif num_samples > 1:
-                infs_all = []
-                for i in range(num_samples):
+        if num_samples == 1:
+             inf_out, train_out = model(im) if training else model(im, augment=augment) # inference, loss outputs
+        elif num_samples > 1:
+             infs_all = []
+             for i in range(num_samples):
                     out, _ = model(im, augment=augment)
                     infs_all.append(out.unsqueeze(2))
-                inf_mean = torch.mean(torch.stack(infs_all), dim=0)
-                infs_all.insert(0, inf_mean)
-                inf_out = torch.cat(infs_all, dim=2)
+             inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+             infs_all.insert(0, inf_mean)
+             inf_out = torch.cat(infs_all, dim=2)
 
-            t0 += time_sync() - t
+        t0 += time_sync() - t
 
             # Loss
-            if compute_loss:
-                loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
+        if compute_loss:
+              loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
 
             # NMS
-            targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
+        targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
 
-            t = time_sync()
-            output, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
+        t = time_sync()
+        output, all_scores, sampled_coords = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres,
                                                                   multi_label=True,
                                                                   max_width=width, max_height=height)
-            t1 += time_sync() - t
+        t1 += time_sync() - t
 
         for si, pred in enumerate(output):
              labels = targets[targets[:, 0] == si, 1:]
@@ -384,7 +384,7 @@ def run(data,
             '''
             del jdict
             print('Converting to RVC1 format...')
-            convert_coco_det_to_rvc_det(det_filename=save_dir/f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
+            convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
                                        gt_filename=ROOT/'instances_val2017.json',
                                        save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
