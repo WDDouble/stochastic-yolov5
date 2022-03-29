@@ -46,7 +46,7 @@ from utils.datasets import create_dataloader
 from utils.general import (LOGGER, box_iou, check_dataset, check_img_size, check_requirements, check_yaml,
                            coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
                            scale_coords, xywh2xyxy, xyxy2xywh, intersect_dicts,clip_coords,cov,is_pos_semidef,get_near_psd)
-from utils.metrics import ConfusionMatrix, ap_per_class
+from utils.metrics import  ap_per_class
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
 
@@ -299,8 +299,8 @@ def run(data,
                                       'all_scores': [round(x, 5) for x in p_all],
                                       'covars': covar_xyxy})
 
-                # Assign all predictions as incorrect
-                correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
+             # Assign all predictions as incorrect
+             correct = torch.zeros(pred.shape[0], niou, dtype=torch.bool, device=device)
              if nl and not only_inference:
                  detected = []  # target indices
                  tcls_tensor = labels[:, 0]
@@ -382,11 +382,11 @@ def run(data,
                 print('WARNING: pycocotools must be installed with numpy==1.17 to run correctly. '
                       'See https://github.com/cocodataset/cocoapi/issues/356')
             '''
-    del jdict
-    print('Converting to RVC1 format...')
-    convert_coco_det_to_rvc_det(det_filename=f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
-                                        gt_filename=glob.glob(data['instances_path'])[0],
-                                        save_filename=f'output/dets_converted_{name}_{conf_thres}_{iou_thres}.json')
+            del jdict
+            print('Converting to RVC1 format...')
+            convert_coco_det_to_rvc_det(det_filename=save_dir/f'output/dets_{name}_{conf_thres}_{iou_thres}.json',
+                                       gt_filename=ROOT/'instances_val2017.json',
+                                       save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
 
         # Return results
