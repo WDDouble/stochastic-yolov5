@@ -330,6 +330,11 @@ def run(data,
              # Append statistics (correct, conf, pcls, tcls)
              stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
+        if plots and batch_i < 3:
+            f = save_dir / f'val_batch{batch_i}_labels.jpg'  # labels
+            Thread(target=plot_images, args=(im, targets, paths, f, names), daemon=True).start()
+            f = save_dir / f'val_batch{batch_i}_pred.jpg'  # predictions
+            Thread(target=plot_images, args=(im, output_to_target(out), paths, f, names), daemon=True).start()
 
     if not only_inference:
             # Compute statistics
