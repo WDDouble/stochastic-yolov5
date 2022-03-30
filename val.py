@@ -26,9 +26,9 @@ from pathlib import Path
 
 import sys
 sys.path.append('./cocoapi/PythonAPI/')
-from threading import Thread
-sys.path.append('./pdq_evaluation')
 
+sys.path.append('./pdq_evaluation')
+from read_files import convert_coco_det_to_rvc_det
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -366,7 +366,7 @@ def parse_opt():
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
-    parser.add_argument('--num_samples', type=int, default=1, help='How many times to sample if doing MC-Dropout')
+    parser.add_argument('--num_samples', type=int, default=10, help='How many times to sample if doing MC-Dropout')
 
 
 
