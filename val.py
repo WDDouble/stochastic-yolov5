@@ -332,7 +332,7 @@ def run(data,
             del jdict
             print('Converting to RVC1 format...')
             convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
-                                       gt_filename=ROOT/'instances_val2017.json',
+                                       gt_filename=../datasets/coco/annotations/'instances_val2017.json',
                                        save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
 
