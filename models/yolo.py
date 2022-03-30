@@ -34,7 +34,7 @@ class Detect(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter
 
-    def __init__(self, nc=80, anchors=(), ch=(), mcdropout_rate=0.25, inplace=True):  # detection layer
+    def __init__(self, nc=80, anchors=(), ch=(), mcdropout_rate=0.25, num_samples=10,inplace=True):  # detection layer
         super().__init__()
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
@@ -46,6 +46,7 @@ class Detect(nn.Module):
         self.mcdropout_rate = mcdropout_rate
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.dropout = nn.Dropout(self.mcdropout_rate)
+        self.num_samples=num_samples
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
 
@@ -53,7 +54,7 @@ class Detect(nn.Module):
         inf_all=[] #inf阶段的输出维度应该是bs x predicition x num_sample x (nc+5),本来yolov5的inf维度是bs x prediction x(nc+5)
          # inference output
         temp=x.copy()  #缓存当前的输入x
-        for j in range(10):#采样10次
+        for j in range(self.num_samples):#采样num_samples次
             z = []
             for i in range(self.nl):
                 x[i] = self.m[i](self.dropout(temp[i]))  # 在最后的cov前加了dropout
@@ -250,7 +251,7 @@ class Model(nn.Module):
 
 def parse_model(d, ch):  # model_dict, input_channels(3)
     LOGGER.info(f"\n{'':>3}{'from':>18}{'n':>3}{'params':>10}  {'module':<40}{'arguments':<30}")
-    anchors, nc, gd, gw ,mc_dropout_rate,num_sample= d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d['mcdropout_rate'],d['num_sample']
+    anchors, nc, gd, gw ,mc_dropout_rate,num_samples= d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d['mcdropout_rate'],d['num_samples']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
@@ -283,7 +284,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             if isinstance(args[1], int):  # number of anchors
                 args[1] = [list(range(args[1] * 2))] * len(f)
             args.append(mc_dropout_rate)
-            args.append(num_sample)
+            args.append(num_samples)
 
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2
