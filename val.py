@@ -28,7 +28,7 @@ import sys
 sys.path.append('./cocoapi/PythonAPI/')
 from threading import Thread
 sys.path.append('./pdq_evaluation')
-from read_files import convert_coco_det_to_rvc_det
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -156,16 +156,16 @@ def run(data,
         with torch.no_grad():
             t = time_sync()
                 # Inference
-            if num_samples == 1:
-                 inf_out, train_out = model(im, augment=augment) # inference, loss outputs
-            elif num_samples > 1:
-                 infs_all = []
-                 for i in range(num_samples):
-                        out, _ = model(im, augment=augment)
-                        infs_all.append(out.unsqueeze(2))
-                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)
-                 infs_all.insert(0, inf_mean)
-                 inf_out = torch.cat(infs_all, dim=2)
+        #    if num_samples == 1:
+        #      inf_out, train_out = model(im, augment=augment) # inference, loss outputs
+         #   if num_samples > 1:
+         #        infs_all = []  #保存不同的输出
+          #       for i in range(num_samples):
+            infs_all, _ = model(im, augment=augment)
+ #                      infs_all.append(out.unsqueeze(2))   #添加新的维度，让不同的输入在dim=2叠加
+            inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+            infs_all.insert(0, inf_mean)
+            inf_out = torch.cat(infs_all, dim=2)
 
             t0 += time_sync() - t
 

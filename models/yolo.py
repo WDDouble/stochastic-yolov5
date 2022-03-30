@@ -48,28 +48,34 @@ class Detect(nn.Module):
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
+
     def forward(self, x):
-        z = [] # inference output
+        inf_all=[] #inf阶段的输出维度应该是bs x predicition x num_sample x (nc+5),本来yolov5的inf维度是bs x prediction x(nc+5)
+         # inference output
+        temp=x.copy()  #缓存当前的输入x
+        for j in range(10):#采样10次
+            z = []
+            for i in range(self.nl):
+                x[i] = self.m[i](self.dropout(temp[i]))  # 在最后的cov前加了dropout
+                bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+                x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+                if not self.training:  # inference
+                    if self.onnx_dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
+                        self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
 
-        for i in range(self.nl):
-            x[i] = self.m[i](self.dropout(x[i]))  # conv
-            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
-            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
-            if not self.training:  # inference
-                if self.onnx_dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
-                    self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
+                    y = x[i].sigmoid()
+                    if self.inplace:
+                        y[..., 0:2] = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                        y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                    else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
+                        xy = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
+                        wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
+                        y = torch.cat((xy, wh, y[..., 4:]), -1)
+                    z.append(y.view(bs, -1, self.no))
+            inf_j=torch.cat(z,1) #一次infer的结果
+            inf_all.append(inf_j.unsqueeze(2)) #将每次inf的结果存在inf_all
+        return x if self.training else (inf_all, x)
 
-                y = x[i].sigmoid()
-                if self.inplace:
-                    y[..., 0:2] = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
-                    xy = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                    y = torch.cat((xy, wh, y[..., 4:]), -1)
-                z.append(y.view(bs, -1, self.no))
-
-        return x if self.training else (torch.cat(z, 1), x)
 
     def _make_grid(self, nx=20, ny=20, i=0):
         d = self.anchors[i].device
@@ -111,7 +117,7 @@ class Model(nn.Module):
         if isinstance(m, Detect):
             s = 256  # 2x min stride
             m.inplace = self.inplace
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
+            m.stride = torch.tensor([8.,16.,32.])  # forward
             check_anchor_order(m)  # must be in pixel-space (not grid-space)
             m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
@@ -300,7 +306,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolov5s.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='yolov5s-custum.yaml', help='model.yaml')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
     parser.add_argument('--test', action='store_true', help='test all yolo*.yaml')
@@ -312,6 +318,7 @@ if __name__ == '__main__':
     # Create model
     model = Model(opt.cfg).to(device)
     model.train()
+
 
     # Profile
     if opt.profile:
