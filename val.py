@@ -28,7 +28,7 @@ import sys
 sys.path.append('./cocoapi/PythonAPI/')
 
 sys.path.append('./pdq_evaluation')
-from read_files import convert_coco_det_to_rvc_det
+#from read_files import convert_coco_det_to_rvc_det
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -330,10 +330,10 @@ def run(data,
                       'See https://github.com/cocodataset/cocoapi/issues/356')
             '''
             del jdict
-            print('Converting to RVC1 format...')
-            convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
-                                       gt_filename=../datasets/coco/annotations/'instances_val2017.json',
-                                       save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
+  #          print('Converting to RVC1 format...')
+ #           convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
+ #                                      gt_filename=../datasets/coco/annotations/'instances_val2017.json',
+  #                                     save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
 
         # Return results
@@ -345,7 +345,7 @@ def run(data,
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', type=str, default='', help='initial weights path')
+    parser.add_argument('--weights', type=str, default='best.pt', help='initial weights path')
     parser.add_argument('--batch-size', type=int, default=2, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')

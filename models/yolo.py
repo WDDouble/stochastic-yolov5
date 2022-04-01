@@ -47,6 +47,8 @@ class Detect(nn.Module):
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.num_samples=num_samples
+        self.DropBlock=DropBlock2D(0,5)
+
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
 
@@ -57,7 +59,7 @@ class Detect(nn.Module):
         for j in range(self.num_samples):#采样num_samples次
             z = []
             for i in range(self.nl):
-                x[i] = self.m[i](self.dropout(temp[i]))  # 在最后的cov前加了dropout
+                x[i] = self.m[i](self.DropBlock(temp[i]))  # 在最后的cov前加了dropout
                 bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
                 x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
                 if not self.training:  # inference
@@ -76,6 +78,8 @@ class Detect(nn.Module):
             inf_j=torch.cat(z,1) #一次infer的结果
             inf_all.append(inf_j.unsqueeze(2)) #将每次inf的结果存在inf_all
         return x if self.training else (inf_all, x)
+
+
 
 
     def _make_grid(self, nx=20, ny=20, i=0):
