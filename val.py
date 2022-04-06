@@ -136,7 +136,7 @@ def run(data,
 
     seen = 0
 
-    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+    names = ['item'] if single_cls and len(data['names']) != 1 else data['names']
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images', 'Targets', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.

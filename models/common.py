@@ -684,7 +684,7 @@ class Classify(nn.Module):
         return self.flat(self.conv(z))  # flatten to x(b,c2)
 
 
-class DropBlock2D(nn.Module):
+class DropBlock(nn.Module):
     r"""Randomly zeroes 2D spatial blocks of the input tensor.
     As described in the paper
     `DropBlock: A regularization method for convolutional networks`_ ,
@@ -701,7 +701,7 @@ class DropBlock2D(nn.Module):
     """
 
     def __init__(self, drop_prob, block_size):
-        super(DropBlock2D, self).__init__()
+        super(DropBlock, self).__init__()
 
         self.drop_prob = drop_prob
         self.block_size = block_size
@@ -713,6 +713,8 @@ class DropBlock2D(nn.Module):
             "Expected input with 4 dimensions (bsize, channels, height, width)"
 
         if self.drop_prob == 0.:
+            return x
+        elif not self.training:
             return x
         else:
             # get gamma value

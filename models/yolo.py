@@ -10,7 +10,7 @@ import argparse
 import sys
 from copy import deepcopy
 from pathlib import Path
-
+import copy
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[1]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -47,7 +47,7 @@ class Detect(nn.Module):
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.num_samples=num_samples
-        self.DropBlock=DropBlock2D(0,5)
+#        self.DropBlock=DropBlock(0.1,7)
 
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
@@ -55,11 +55,11 @@ class Detect(nn.Module):
     def forward(self, x):
         inf_all=[] #inf阶段的输出维度应该是bs x predicition x num_sample x (nc+5),本来yolov5的inf维度是bs x prediction x(nc+5)
          # inference output
-        temp=x.copy()  #缓存当前的输入x
+        temp=copy.deepcopy(x)  #缓存当前的输入x
         for j in range(self.num_samples):#采样num_samples次
             z = []
             for i in range(self.nl):
-                x[i] = self.m[i](self.DropBlock(temp[i]))  # 在最后的cov前加了dropout
+                x[i] = self.m[i](self.mcdropout_rate(temp[i]))  # 在最后的cov前加了dropout
                 bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
                 x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
                 if not self.training:  # inference
