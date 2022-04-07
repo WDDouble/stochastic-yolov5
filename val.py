@@ -25,10 +25,10 @@ import sys
 from pathlib import Path
 
 import sys
-sys.path.append('./cocoapi/PythonAPI/')
+sys.path.append('/content/datasets/coco/annotations/instances_val2017.json')
 
 sys.path.append('./pdq_evaluation')
-#from read_files import convert_coco_det_to_rvc_det
+from read_files import convert_coco_det_to_rvc_det
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -157,7 +157,7 @@ def run(data,
             t = time_sync()
                 # Inference
             infs_all, _ = model(im, augment=augment)
- #                      infs_all.append(out.unsqueeze(2))   #添加新的维度，让不同的输入在dim=2叠加
+ #infs_all.append(out.unsqueeze(2))   #添加新的维度，让不同的输入在dim=2叠加
             inf_mean = torch.mean(torch.stack(infs_all), dim=0)
             infs_all.insert(0, inf_mean)
             inf_out = torch.cat(infs_all, dim=2)
@@ -325,10 +325,10 @@ def run(data,
                       'See https://github.com/cocodataset/cocoapi/issues/356')
             '''
             del jdict
-  #          print('Converting to RVC1 format...')
- #           convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
- #                                      gt_filename=../datasets/coco/annotations/'instances_val2017.json',
-  #                                     save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
+            print('Converting to RVC1 format...')
+            convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
+                                       gt_filename='/content/datasets/coco/annotations/instances_val2017.json',
+                                      save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
 
         # Return results
