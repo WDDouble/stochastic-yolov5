@@ -155,12 +155,13 @@ def run(data,
 
         with torch.no_grad():
             t = time_sync()
-                # Inference
-            infs_all, _ = model(im, augment=augment)
- #infs_all.append(out.unsqueeze(2))   #添加新的维度，让不同的输入在dim=2叠加
-            inf_mean = torch.mean(torch.stack(infs_all), dim=0)
-            infs_all.insert(0, inf_mean)
-            inf_out = torch.cat(infs_all, dim=2)
+            if num_samples ==1：
+                inf_out,_=model(im,augemnt=augment)
+            else:
+                inf_all, _ = model(im, augment=augment)
+                inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+                infs_all.insert(0, inf_mean)
+                inf_out = torch.cat(infs_all, dim=2)
 
             t0 += time_sync() - t
 
