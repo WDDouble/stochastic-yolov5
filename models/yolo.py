@@ -47,7 +47,7 @@ class Detect(nn.Module):
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.num_samples=num_samples
-        self.DropBlock=DropBlock2D(0.9,3)
+        self.DropBlock=DropBlock2d(0.1,3)
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
 
