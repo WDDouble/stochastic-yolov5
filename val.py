@@ -155,10 +155,10 @@ def run(data,
 
         with torch.no_grad():
             t = time_sync()
-            if num_samples ==1：
-                inf_out,_=model(im,augemnt=augment)
+            if num_samples ==1:
+                inf_out, _ = model(im, augment=augment)
             else:
-                inf_all, _ = model(im, augment=augment)
+                infs_all, _ = model(im, augment=augment)
                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)
                 infs_all.insert(0, inf_mean)
                 inf_out = torch.cat(infs_all, dim=2)
