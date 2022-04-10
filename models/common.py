@@ -26,6 +26,7 @@ from utils.general import (LOGGER, check_requirements, check_suffix, check_versi
                            make_divisible, non_max_suppression, scale_coords, xywh2xyxy, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import copy_attr, time_sync
+from torch.autograd import Variable
 
 
 def autopad(k, p=None):  # kernel, padding
@@ -796,5 +797,28 @@ class DropBlock2d_2(nn.Module):#各channel共享采样
 
     def _compute_gamma(self, x):
         return self.drop_prob / (self.block_size ** 2)
+
+
+class GaussianDropout(nn.Module):
+    def __init__(self, alpha=1.0):
+        super(GaussianDropout, self).__init__()
+        self.alpha = torch.Tensor([alpha])
+
+    def forward(self, x):
+        """
+        Sample noise   e ~ N(1, alpha)
+        Multiply noise h = h_ * e
+        """
+        if self.train():
+            # N(1, alpha)
+            epsilon = torch.randn(x.size()) * self.alpha + 1
+
+            epsilon = Variable(epsilon)
+            if x.is_cuda:
+                epsilon = epsilon.cuda()
+
+            return x * epsilon
+        else:
+            return x
 
 
