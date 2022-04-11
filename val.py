@@ -80,6 +80,8 @@ def run(data,
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        corruption_num=None,
+        severity=None,
         cfg=None,
         ):
     # Initialize/load model and set device
@@ -131,8 +133,10 @@ def run(data,
         pad = 0.0 if task in ('speed', 'benchmark') else 0.5
         rect = False if task == 'benchmark' else True  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
+        if corruption_num is not None:
+            print(f'Dataloader will have corrupted images with number {corruption_num} and severity {severity}')
         dataloader = create_dataloader(data[task], imgsz, batch_size, stride, single_cls, pad=pad, rect=rect,
-                                       workers=workers, prefix=colorstr(f'{task}: '))[0]
+                                       workers=workers, prefix=colorstr(f'{task}: '),corruption_num=corruption_num,severity=severity)[0]
 
     seen = 0
 
@@ -363,6 +367,8 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
     parser.add_argument('--num_samples', type=int, default=10, help='How many times to sample if doing MC-Dropout')
+    parser.add_argument('--corruption_num', type=int, help='which corruption number to use from imagecorruptions')
+    parser.add_argument('--severity', type=int, help='which severity to use for the corruption in --corruption_num')
 
 
 
