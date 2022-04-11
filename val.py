@@ -156,7 +156,7 @@ def run(data,
         with torch.no_grad():
             t = time_sync()
             if num_samples ==1:
-                inf_out, _ = model(im, augment=augment)
+                infs_out, _ = model(im, augment=augment)
             else:
                 infs_all, _ = model(im, augment=augment)
                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)

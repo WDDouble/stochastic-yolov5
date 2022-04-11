@@ -48,7 +48,7 @@ class Detect(nn.Module):
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.num_samples=num_samples
         self.DropBlock=DropBlock2d(0.1,3)
-        self.gdropout=GaussianDropout(mcdropout_rate/(1-mcdropout_rate))
+        self.gdropout=GaussianDropout(mcdropout_rate)
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
 
