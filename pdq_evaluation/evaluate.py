@@ -203,7 +203,7 @@ def main():
         output_file.write("\n".join("{0}:{1}".format(k, v) for k, v in sorted(result.items())))
     
     # Saving in CSV format for easier post analysis
-    saving_location = os.path.join('results', f'metrics_{args.name}.csv')
+    saving_location = os.path.join('results', f'metrics.csv')
     print(f'Saving {saving_location}...')
     pd.DataFrame.from_dict({args.name: result}, orient='index').to_csv(saving_location)
 

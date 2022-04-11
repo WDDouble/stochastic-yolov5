@@ -94,7 +94,7 @@ def exif_transpose(image):
 
 
 def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False, cache=False, pad=0.0,
-                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', shuffle=False):
+                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', shuffle=False, corruption_num=None,severity=None):
     if rect and shuffle:
         LOGGER.warning('WARNING: --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
@@ -636,7 +636,7 @@ class LoadImagesAndLabels(Dataset):
             else:  # read image
                 im = cv2.imread(f)
                 if self.corruption_num is not None:
-                    img = corrupt(img, severity=self.severity, corruption_number=self.corruption_num)
+                    im = corrupt(im, severity=self.severity, corruption_number=self.corruption_num)
                 # BGR
                 assert im is not None, f'Image Not Found {f}'
             h0, w0 = im.shape[:2]  # orig hw
