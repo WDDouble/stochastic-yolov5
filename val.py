@@ -120,6 +120,10 @@ def run(data,
     for m in model.modules():
         if m.__class__.__name__.startswith('Dropout'):
             m.train() #enable dropout
+    
+    for m in model.modules():
+        if m.__class__.__name__.startswith('DropBlock2d'):
+            m.train() #enable dropout
 
     cuda = device.type != 'cpu'
     is_coco = isinstance(data.get('val'), str) and data['val'].endswith('coco/val2017.txt')  # COCO dataset
