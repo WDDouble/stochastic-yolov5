@@ -731,77 +731,9 @@ class DropBlock2d(nn.Module):#各channel独立采样
             input = input * mask * normalize_scale
         return input
 
-class DropBlock2d_2(nn.Module):#各channel共享采样
-    r"""Randomly zeroes 2D spatial blocks of the input tensor.
-    As described in the paper
-    `DropBlock: A regularization method for convolutional networks`_ ,
-    dropping whole blocks of feature map allows to remove semantic
-    information as compared to regular dropout.
-    Args:
-        drop_prob (float): probability of an element to be dropped.
-        block_size (int): size of the block to drop
-    Shape:
-        - Input: `(N, C, H, W)`
-        - Output: `(N, C, H, W)`
-    .. _DropBlock: A regularization method for convolutional networks:
-       https://arxiv.org/abs/1810.12890
-    """
-
-    def __init__(self, drop_prob, block_size):
-        super(DropBlock2D, self).__init__()
-
-        self.drop_prob = drop_prob
-        self.block_size = block_size
-
-    def forward(self, x):
-        # shape: (bsize, channels, height, width)
-
-        assert x.dim() == 4, \
-            "Expected input with 4 dimensions (bsize, channels, height, width)"
-
-        if not self.training or self.drop_prob == 0.:
-            return x
-        else:
-            # get gamma value
-            gamma = self._compute_gamma(x)
-
-            # sample mask
-            mask = (torch.rand(x.shape[0], *x.shape[2:]) < gamma).float()
-
-            # place mask on input device
-            mask = mask.to(x.device)
-
-            # compute block mask
-            block_mask = self._compute_block_mask(mask)
-
-            # apply block mask
-            out = x * block_mask[:, None, :, :]
-
-            # scale output
-            out = out * block_mask.numel() / block_mask.sum()
-
-            return out
-
-    def _compute_block_mask(self, mask):
-        block_mask = F.max_pool2d(input=mask[:, None, :, :],
-                                  kernel_size=(self.block_size, self.block_size),
-                                  stride=(1, 1),
-                                  padding=self.block_size // 2)
-
-        if self.block_size % 2 == 0:
-            block_mask = block_mask[:, :, :-1, :-1]
-
-        block_mask = 1 - block_mask.squeeze(1)
-
-        return block_mask
-
-    def _compute_gamma(self, x):
-        return self.drop_prob / (self.block_size ** 2)
-
-
 class GaussianDropout(nn.Module):
 
-    def __init__(self, p: float):
+    def __init__(self, p: float, inplace: bool = False) -> None:
         """
         Multiplicative Gaussian Noise dropout with N(1, p/(1-p))
         It is NOT (1-p)/p like in the paper, because here the
@@ -815,26 +747,26 @@ class GaussianDropout(nn.Module):
         :param p: float - determines the the standard deviation of the
         gaussian noise, where sigma = p/(1-p).
         """
-        super().__init__()
-        assert 0 <= p < 1
-        self.t_mean = torch.ones((0,))
-        self.shape = ()
+        super().__init__()       
         self.p = p
-        self.t_std = self.compute_std()
+        self.inplace=inplace
 
     def compute_std(self):
         return self.p / (1 - self.p)
 
     def forward(self, t_hidden):
+        t_mean= torch.ones((0,))
+        shape = ()
+        t_std = self.compute_std()
         if self.p > 0.:
-            if self.t_mean.shape != t_hidden.shape:
-                self.t_mean = torch.ones_like(input=t_hidden
+            if t_mean.shape != t_hidden.shape:
+                t_mean = torch.ones_like(input=t_hidden
                                               , dtype=t_hidden.dtype
                                               , device=t_hidden.device)
-            elif self.t_mean.device != t_hidden.device:
-                self.t_mean = self.t_mean.to(device=t_hidden.device, dtype=t_hidden.dtype)
+            elif t_mean.device != t_hidden.device:
+                t_mean = t_mean.to(device=t_hidden.device, dtype=t_hidden.dtype)
 
-            t_gaussian_noise = torch.normal(self.t_mean, self.t_std)
+            t_gaussian_noise = torch.normal(t_mean, t_std)
             t_hidden = t_hidden.mul(t_gaussian_noise)
         return t_hidden
 

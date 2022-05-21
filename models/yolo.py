@@ -48,8 +48,8 @@ class Detect(nn.Module):
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.num_samples=num_samples
         self.DropBlock=DropBlock2d(0.1,3)
-        self.gdropout=GaussianDropout(mcdropout_rate)
-        self.sdroput=nn.Dropout2d(mcdropout_rate)
+        self.gdropout=GaussianDropout(self.mcdropout_rate)
+        self.sdroput=nn.Dropout2d(self.mcdropout_rate)
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
 
@@ -84,7 +84,7 @@ class Detect(nn.Module):
             for j in range(self.num_samples):#采样num_samples次
                 z = []
                 for i in range(self.nl):
-                    x[i] = self.m[i](self.dropout(self.DropBlock(temp[i])))  # 在最后的cov前加了dropout
+                    x[i] = self.m[i](self.gdropout((temp[i])))  # 在最后的cov前加了dropout
                     bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
                     x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
                     if not self.training:  # inference
