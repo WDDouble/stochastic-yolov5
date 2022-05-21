@@ -50,6 +50,10 @@ from utils.metrics import  ap_per_class
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
 
+def change_dropout_rate(m, perc):
+    for each_module in m.modules():
+        if each_module.__class__.__name__.startswith('Dropout') oreach_module.__class__.__name__.startswith('GaussianDropout') oreach_module.__class__.__name__.startswith('DropBlock2d'):
+            each_module.p = perc
 
 
 def run(data,
@@ -82,6 +86,7 @@ def run(data,
         compute_loss=None,
         corruption_num=None,
         severity=None,
+        new_drop_rate=None,
         cfg=None,
         ):
     # Initialize/load model and set device
@@ -111,6 +116,9 @@ def run(data,
         model.float()
         if half:
             model.half()
+        if new_drop_rate is not None:
+            print('Changing default dropout rate...')
+            change_dropout_rate(m=model, perc=new_drop_rate)
 
         # Data
         data = check_dataset(data)  # check
@@ -372,6 +380,7 @@ def parse_opt():
     parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
     parser.add_argument('--num_samples', type=int, default=10, help='How many times to sample if doing MC-Dropout')
     parser.add_argument('--corruption_num', type=int, help='which corruption number to use from imagecorruptions')
+    parser.add_argument('--new_drop_rate', type=float, help='change the dropout rate of Dropout layers')
     parser.add_argument('--severity', type=int, help='which severity to use for the corruption in --corruption_num')
 
 
