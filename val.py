@@ -52,7 +52,7 @@ from utils.torch_utils import select_device, time_sync
 
 def change_dropout_rate(m, perc):
     for each_module in m.modules():
-        if each_module.__class__.__name__.startswith('Dropout') oreach_module.__class__.__name__.startswith('GaussianDropout') oreach_module.__class__.__name__.startswith('DropBlock2d'):
+        if each_module.__class__.__name__.startswith('Dropout') or each_module.__class__.__name__.startswith('GaussianDropout') or each_module.__class__.__name__.startswith('DropBlock2d'):
             each_module.p = perc
 
 
