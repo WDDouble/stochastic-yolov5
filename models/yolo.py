@@ -34,7 +34,7 @@ class Detect(nn.Module):
     stride = None  # strides computed during build
     onnx_dynamic = False  # ONNX export parameter
 
-    def __init__(self, nc=80, anchors=(), ch=(), mcdropout_rate=0.25, num_samples=10,inplace=True):  # detection layer
+    def __init__(self, nc=80, anchors=(), ch=(), mcdropout_rate=0.25, num_samples=10,dropout_type=0,inplace=True):  # detection layer
         super().__init__()
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
@@ -47,9 +47,10 @@ class Detect(nn.Module):
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.dropout = nn.Dropout(self.mcdropout_rate)
         self.num_samples=num_samples
-        self.DropBlock=DropBlock2d(0.1,3)
+        self.DropBlock=DropBlock2d(self.mcdropout_rate,3)
         self.gdropout=GaussianDropout(self.mcdropout_rate)
         self.sdroput=nn.Dropout2d(self.mcdropout_rate)
+        self.dropout_type=dropout_type
         self.inplace = inplace  # use in-place ops (e.g. slice assignment)
 
 
@@ -84,7 +85,14 @@ class Detect(nn.Module):
             for j in range(self.num_samples):#采样num_samples次
                 z = []
                 for i in range(self.nl):
-                    x[i] = self.m[i](self.gdropout((temp[i])))  # 在最后的cov前加了dropout
+                    if self.dropout_type==0:
+                        x[i] = self.m[i](self.dropout((temp[i]))) 
+                    elif self.dropout_type==1:
+                        x[i] = self.m[i](self.gdropout((temp[i])))
+                    elif self.dropout_type==2:
+                        x[i]= self.m[i](self.DropBlock((temp[i])))
+                    else:
+                        x[i] = self.m[i](x[i])
                     bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
                     x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
                     if not self.training:  # inference
@@ -280,7 +288,7 @@ class Model(nn.Module):
 
 def parse_model(d, ch):  # model_dict, input_channels(3)
     LOGGER.info(f"\n{'':>3}{'from':>18}{'n':>3}{'params':>10}  {'module':<40}{'arguments':<30}")
-    anchors, nc, gd, gw ,mc_dropout_rate,num_samples= d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d['mcdropout_rate'],d['num_samples']
+    anchors, nc, gd, gw ,mc_dropout_rate,num_samples,dropout_type= d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple'], d['mcdropout_rate'],d['num_samples'],d['dropout_type']
     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
@@ -314,6 +322,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 args[1] = [list(range(args[1] * 2))] * len(f)
             args.append(mc_dropout_rate)
             args.append(num_samples)
+            args.append(dropout_type)
 
         elif m is Contract:
             c2 = ch[f] * args[0] ** 2

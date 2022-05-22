@@ -183,20 +183,20 @@ def main():
               "avg_label": avg_label_quality, "TP": TP, "FP": FP, "FN": FN, 'mAP': mAP,
               'moLRP': LRP_dict['moLRP'], 'moLRPLoc': LRP_dict['moLRPLoc'], 'moLRPFP': LRP_dict['moLRPFP'],
               'moLRPFN': LRP_dict['moLRPFN']}
-    print("PDQ: {0:4f}\n"
-          "mAP: {1:4f}\n"
-          "avg_pPDQ:{2:4f}\n"
-          "avg_spatial:{3:4f}\n"
-          "avg_label:{4:4f}\n"
-          "avg_foreground:{5:4f}\n"
-          "avg_background:{6:4f}\n"
-          "TP:{7}\nFP:{8}\nFN:{9}\n"
-          "moLRP:{10:4f}\n"
-          "moLRPLoc:{11:4f}\n"
-          "moLRPFP:{12:4f}\n"
-          "moLRPFN:{13:4f}\n".format(pdq, mAP, avg_overall_quality, avg_spatial_quality,
-                                     avg_label_quality, avg_fg_quality, avg_bg_quality, TP, FP, FN,
-                                     LRP_dict['moLRP'], LRP_dict['moLRPLoc'], LRP_dict['moLRPFP'], LRP_dict['moLRPFN']))
+#    print("PDQ: {0:4f}\n"
+ #         "mAP: {1:4f}\n"
+ #         "avg_pPDQ:{2:4f}\n"
+  #        "avg_spatial:{3:4f}\n"
+  #        "avg_label:{4:4f}\n"
+  #        "avg_foreground:{5:4f}\n"
+  #        "avg_background:{6:4f}\n"
+   #       "TP:{7}\nFP:{8}\nFN:{9}\n"
+   #       "moLRP:{10:4f}\n"
+   #       "moLRPLoc:{11:4f}\n"
+    #      "moLRPFP:{12:4f}\n"
+   #       "moLRPFN:{13:4f}\n".format(pdq, mAP, avg_overall_quality, avg_spatial_quality,
+    #                                 avg_label_quality, avg_fg_quality, avg_bg_quality, TP, FP, FN,
+    #                                 LRP_dict['moLRP'], LRP_dict['moLRPLoc'], LRP_dict['moLRPFP'], LRP_dict['moLRPFN']))
 
     # Save evaluation statistics to file
     with open(os.path.join(args.save_folder, 'scores.txt'), 'w') as output_file:
@@ -208,16 +208,16 @@ def main():
 #    pd.DataFrame.from_dict({args.name: result}, orient='index').to_csv(saving_location)
 
     # Save pairwise PDQ statistics to file for use in visualisation code (separate file for each sequence)
-    prev_idx = 0
-    for idx, len_sequence in enumerate(len_sequences):
-        seq_gt_eval_dicts = all_gt_eval_dicts[prev_idx:prev_idx+len_sequence]
-        seq_det_eval_dicts = all_det_eval_dicts[prev_idx:prev_idx + len_sequence]
-        prev_idx += len_sequence
+ #   prev_idx = 0
+  #  for idx, len_sequence in enumerate(len_sequences):
+  #      seq_gt_eval_dicts = all_gt_eval_dicts[prev_idx:prev_idx+len_sequence]
+   #     seq_det_eval_dicts = all_det_eval_dicts[prev_idx:prev_idx + len_sequence]
+   #     prev_idx += len_sequence
 
-        with open(os.path.join(args.save_folder, f'gt_eval_stats_{args.name}_{idx:02d}.json'), 'w') as f:
-            json.dump(seq_gt_eval_dicts, f)
-        with open(os.path.join(args.save_folder, f'det_eval_stats_{args.name}_{idx:02d}.json'), 'w') as f:
-            json.dump(seq_det_eval_dicts, f)
+   #     with open(os.path.join(args.save_folder, f'gt_eval_stats_{args.name}_{idx:02d}.json'), 'w') as f:
+   #         json.dump(seq_gt_eval_dicts, f)
+    #    with open(os.path.join(args.save_folder, f'det_eval_stats_{args.name}_{idx:02d}.json'), 'w') as f:
+    #        json.dump(seq_det_eval_dicts, f)
 
 
 if __name__ == '__main__':

@@ -377,7 +377,7 @@ def parse_opt():
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-custum.yaml', help='model.yaml path')
+    parser.add_argument('--cfg', type=str, default=ROOT / 'models/yolov5s-dropout.yaml', help='model.yaml path')
     parser.add_argument('--num_samples', type=int, default=10, help='How many times to sample if doing MC-Dropout')
     parser.add_argument('--corruption_num', type=int, help='which corruption number to use from imagecorruptions')
     parser.add_argument('--new_drop_rate', type=float, help='change the dropout rate of Dropout layers')
