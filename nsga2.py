@@ -42,6 +42,10 @@ res = minimize(problem,
                seed=1,
                verbose=False))
 
+plot = Scatter()
+plot.add(res.F, facecolor="none", edgecolor="red")
+plot.show()
+
 
 class model:
     def __init__(self, drop_rate:float,dropout_type:int,num_sample:int):
