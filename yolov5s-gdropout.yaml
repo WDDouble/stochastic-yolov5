@@ -6,7 +6,7 @@ depth_multiple: 0.33  # model depth multiple
 width_multiple: 0.50  # layer channel multiple
 mcdropout_rate: 0.25
 num_samples: 10
-dropout_type:1
+dropout_type: 1
 
 anchors:
   - [10,13, 16,30, 33,23]  # P3/8
