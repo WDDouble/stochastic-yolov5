@@ -1,51 +1,20 @@
 import subprocess
+from termios import FF1
 import numpy as np
-from pymoo.core.problem import Problem
+from pymoo.core.problem import ElementwiseProblem
 from pymoo.factory import get_sampling, get_crossover, get_mutation
 from pymoo.operators.mixed_variable_operator import MixedVariableSampling, MixedVariableMutation, MixedVariableCrossover
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
 from pymoo.visualization.scatter import Scatter
+from pymoo.util.display import Display
 
+class MyDisplay(Display):
 
-class MyProblem(Problem):
-    def __init__(self):
-        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 1]), xu=[1,2,10])
-
-    def _evaluate(self, x, out, *args, **kwargs):
-        Model=model(x)
-        output=Model.run()
-        out["F"] = np.column_stack([output[0], output[1]])
-
-mask = ["real", "int","int"]
-sampling = MixedVariableSampling(mask, {
-    "real": get_sampling("real_random"),
-    "int": get_sampling("int_random")
-})
-
-crossover = MixedVariableCrossover(mask, {
-    "real": get_crossover("real_sbx", prob=1.0, eta=3.0),
-    "int": get_crossover("int_sbx", prob=1.0, eta=3.0)
-})
-
-mutation = MixedVariableMutation(mask, {
-    "real": get_mutation("real_pm", eta=3.0),
-    "int": get_mutation("int_pm", eta=3.0)
-})
-problem = MyProblem()
-
-algorithm = NSGA2(pop_size=20)
-
-res = minimize(problem,
-               algorithm,
-               ('n_gen', 10),
-               seed=1,
-               verbose=False))
-
-plot = Scatter()
-plot.add(res.F, facecolor="none", edgecolor="red")
-plot.show()
-
+    def _do(self, problem, evaluator, algorithm):
+        super()._do(problem, evaluator, algorithm)
+        self.output.append("PDQ", np.mean(algorithm.pop.get("X")))
+        self.output.append("mAP", np.mean(algorithm.pop.get("F")))
 
 class model:
     def __init__(self, drop_rate:float,dropout_type:int,num_sample:int):
@@ -68,3 +37,42 @@ class model:
         return [data['PDQ'],data['mAP']]
 
 
+class MyProblem(ElementwiseProblem):
+    def __init__(self):
+        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[1,2,10])
+
+    def _evaluate(self, x, out, *args, **kwargs):
+        Model=model(x[0],x[1],x[2])
+        f1,f2=Model.run()        
+        out["F"] = np.column_stack([f1,f2])
+
+mask = ["real", "int","int"]
+
+sampling = MixedVariableSampling(mask, {
+    "real": get_sampling("real_random"),
+    "int": get_sampling("int_random")
+})
+
+crossover = MixedVariableCrossover(mask, {
+    "real": get_crossover("real_sbx", prob=1.0, eta=3.0),
+    "int": get_crossover("int_sbx", prob=1.0, eta=3.0)
+})
+
+mutation = MixedVariableMutation(mask, {
+    "real": get_mutation("real_pm", eta=3.0),
+    "int": get_mutation("int_pm", eta=3.0)
+})
+problem = MyProblem()
+
+algorithm = NSGA2(pop_size=15,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
+
+res = minimize(problem,
+               algorithm,
+               ('n_gen', 5),
+               seed=1,
+               display=MyDisplay(),
+               verbose=True)
+
+plot = Scatter()
+plot.add(res.F, facecolor="none", edgecolor="red")
+plot.show()

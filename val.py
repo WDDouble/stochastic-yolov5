@@ -176,8 +176,8 @@ def run(data,
             else:
                 infs_all, _ = model(im, augment=augment)
                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)
-                infs_all.insert(0, inf_mean)
-                inf_out = torch.cat(infs_all, dim=2)
+            infs_all.insert(0, inf_mean)
+            inf_out = torch.cat(infs_all, dim=2)
 
             t0 += time_sync() - t
 
