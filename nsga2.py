@@ -34,6 +34,8 @@ class model:
                 if line:
                     name,value=line.strip().split(':',1)
                     data[name]=float(value)
+        print("PDQ: {0:4f}\n"
+          "mAP: {1:4f}\n".format(data['PDQ'],data['mAP'])
         return [data['PDQ'],data['mAP']]
 
 
@@ -72,7 +74,9 @@ res = minimize(problem,
                seed=1,
                display=MyDisplay(),
                verbose=True)
-
+print("the final value:")
+print(res.X)
+print("the final ")
 plot = Scatter()
 plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
