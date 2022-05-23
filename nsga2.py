@@ -1,5 +1,4 @@
 import subprocess
-from termios import FF1
 import numpy as np
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.factory import get_sampling, get_crossover, get_mutation
@@ -32,7 +31,7 @@ class model:
 
 class MyProblem(ElementwiseProblem):
     def __init__(self):
-        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[1,2,10])
+        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[0.8,2,10])
 
     def _evaluate(self, x, out, *args, **kwargs):
         print(x)
@@ -59,19 +58,42 @@ mutation = MixedVariableMutation(mask, {
 })
 problem = MyProblem()
 
-algorithm = NSGA2(pop_size=15,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
+algorithm = NSGA2(pop_size=50,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
 
 res = minimize(problem,
                algorithm,
-               ('n_gen', 5),
+               ('n_gen', 1),
                seed=1,
+               copy_algorithm=False,
                verbose=True)
-print("the final value:")
+print("the final designspace:")
 print(res.X)
-print("the final solution:")
-print(res.opt)
-print("The final Population")
-print(res.pop)
+print("the final map and pdq:")
+print(res.F)
+
 plot = Scatter()
 plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
+plot.save("res.png")
+np.save("checkpoint", algorithm)
+
+resume=0
+if resume==1:
+    checkpoint, = np.load("checkpoint.npy", allow_pickle=True).flatten()
+    print("Loaded Checkpoint:", checkpoint)
+    checkpoint.has_terminated = False
+    res = minimize(problem,
+               checkpoint,
+               ('n_gen', 1),
+               seed=1,
+               copy_algorithm=False,
+               verbose=True)
+    print("the final designspace:")
+    print(res.X)
+    print("the final map and pdq:")
+    print(res.F)
+    plot = Scatter()
+    plot.add(res.F, facecolor="none", edgecolor="red")
+    plot.show()
+    plot.save("res.png")
+    np.save("checkpoint", algorithm)
