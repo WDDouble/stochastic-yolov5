@@ -9,13 +9,6 @@ from pymoo.optimize import minimize
 from pymoo.visualization.scatter import Scatter
 from pymoo.util.display import Display
 
-class MyDisplay(Display):
-
-    def _do(self, problem, evaluator, algorithm):
-        super()._do(problem, evaluator, algorithm)
-        self.output.append("PDQ", np.mean(algorithm.pop.get("X")))
-        self.output.append("mAP", np.mean(algorithm.pop.get("F")))
-
 class model:
     def __init__(self, drop_rate:float,dropout_type:int,num_sample:int):
         self.drop_rate=str(drop_rate)
@@ -34,8 +27,7 @@ class model:
                 if line:
                     name,value=line.strip().split(':',1)
                     data[name]=float(value)
-        print("PDQ: {0:4f}\n"
-          "mAP: {1:4f}\n".format(data['PDQ'],data['mAP'])
+        print("PDQ: {0:4f}\nmAP: {1:4f}\n".format(data['PDQ'],data['mAP']))
         return [data['PDQ'],data['mAP']]
 
 
@@ -44,8 +36,10 @@ class MyProblem(ElementwiseProblem):
         super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[1,2,10])
 
     def _evaluate(self, x, out, *args, **kwargs):
+        print(x)
         Model=model(x[0],x[1],x[2])
-        f1,f2=Model.run()        
+        output=Model.run()
+        f1,f2=output[0]*(-1),output[1]*(-1)      
         out["F"] = np.column_stack([f1,f2])
 
 mask = ["real", "int","int"]
@@ -72,11 +66,13 @@ res = minimize(problem,
                algorithm,
                ('n_gen', 5),
                seed=1,
-               display=MyDisplay(),
                verbose=True)
 print("the final value:")
 print(res.X)
-print("the final ")
+print("the final solution:")
+print(res.opt)
+print("The final Population")
+print(res.pop)
 plot = Scatter()
 plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
