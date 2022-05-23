@@ -7,7 +7,6 @@ from pymoo.operators.mixed_variable_operator import MixedVariableSampling, Mixed
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
 from pymoo.visualization.scatter import Scatter
-from pymoo.util.display import Display
 
 class model:
     def __init__(self, drop_rate:float,dropout_type:int,num_sample:int):
