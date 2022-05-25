@@ -1,5 +1,7 @@
 import subprocess
+import sys 
 import numpy as np
+import time
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.factory import get_sampling, get_crossover, get_mutation
 from pymoo.operators.mixed_variable_operator import MixedVariableSampling, MixedVariableMutation, MixedVariableCrossover
@@ -7,18 +9,18 @@ from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
 from pymoo.visualization.scatter import Scatter
 
+
+
 class model:
     def __init__(self, drop_rate:float,dropout_type:int,num_sample:int):
         self.drop_rate=str(drop_rate)
         self.dropout_type=dropout_type
         self.num_sample=str(num_sample)
-        self.num_run=0
 
     def run(self):
         cfg_list=["yolov5s-dropout.yaml","yolov5s-gdropout.yaml","yolov5s-dropblock.yaml"]
-        print("num of gen:")
-        print(self.num_run)
-        num_run=+1
+        it=iter(num_evaluation)
+
         print("running yolov5...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         print("evaluating PDQ and mAP...")
@@ -39,7 +41,6 @@ class MyProblem(ElementwiseProblem):
 
     def _evaluate(self, x, out, *args, **kwargs):
         print(x)
-        print('num of gen:')
         
         Model=model(x[0],x[1],x[2])
         output=Model.run()
@@ -65,7 +66,7 @@ mutation = MixedVariableMutation(mask, {
 problem = MyProblem()
 
 algorithm = NSGA2(pop_size=50,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
-
+'''
 res = minimize(problem,
                algorithm,
                ('n_gen', 1),
@@ -82,8 +83,8 @@ plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
 plot.save("res.png")
 np.save("checkpoint", checkpoint)
-
-resume=0
+'''
+resume=1
 if resume==1:
     checkpoint, = np.load("checkpoint.npy", allow_pickle=True).flatten()
     print("Loaded Checkpoint:", checkpoint)
