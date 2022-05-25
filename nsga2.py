@@ -12,9 +12,13 @@ class model:
         self.drop_rate=str(drop_rate)
         self.dropout_type=dropout_type
         self.num_sample=str(num_sample)
+        self.num_run=0
 
     def run(self):
         cfg_list=["yolov5s-dropout.yaml","yolov5s-gdropout.yaml","yolov5s-dropblock.yaml"]
+        print("num of gen:")
+        print(self.num_run)
+        num_run=+1
         print("running yolov5...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         print("evaluating PDQ and mAP...")
@@ -31,10 +35,12 @@ class model:
 
 class MyProblem(ElementwiseProblem):
     def __init__(self):
-        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[0.8,2,10])
+        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[1,2,10])
 
     def _evaluate(self, x, out, *args, **kwargs):
         print(x)
+        print('num of gen:')
+        
         Model=model(x[0],x[1],x[2])
         output=Model.run()
         f1,f2=output[0]*(-1),output[1]*(-1)      
@@ -75,13 +81,14 @@ plot = Scatter()
 plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
 plot.save("res.png")
-np.save("checkpoint", algorithm)
+np.save("checkpoint", checkpoint)
 
 resume=0
 if resume==1:
     checkpoint, = np.load("checkpoint.npy", allow_pickle=True).flatten()
     print("Loaded Checkpoint:", checkpoint)
     checkpoint.has_terminated = False
+    
     res = minimize(problem,
                checkpoint,
                ('n_gen', 1),
@@ -96,4 +103,4 @@ if resume==1:
     plot.add(res.F, facecolor="none", edgecolor="red")
     plot.show()
     plot.save("res.png")
-    np.save("checkpoint", algorithm)
+    np.save("checkpoint", checkpoint)
