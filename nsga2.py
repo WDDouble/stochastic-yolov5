@@ -1,7 +1,5 @@
 import subprocess
-import sys 
 import numpy as np
-import time
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.factory import get_sampling, get_crossover, get_mutation
 from pymoo.operators.mixed_variable_operator import MixedVariableSampling, MixedVariableMutation, MixedVariableCrossover
@@ -19,8 +17,6 @@ class model:
 
     def run(self):
         cfg_list=["yolov5s-dropout.yaml","yolov5s-gdropout.yaml","yolov5s-dropblock.yaml"]
-        it=iter(num_evaluation)
-
         print("running yolov5...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         print("evaluating PDQ and mAP...")
