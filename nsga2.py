@@ -6,6 +6,7 @@ from pymoo.operators.mixed_variable_operator import MixedVariableSampling, Mixed
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.optimize import minimize
 from pymoo.visualization.scatter import Scatter
+import time
 
 
 
@@ -16,6 +17,7 @@ class model:
         self.num_sample=str(num_sample)
 
     def run(self):
+        old_time = time.time()
         cfg_list=["yolov5s-dropout.yaml","yolov5s-gdropout.yaml","yolov5s-dropblock.yaml"]
         print("running yolov5...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
@@ -30,7 +32,7 @@ class model:
                 if line:
                     name,value=line.strip().split(':',1)
                     data[name]=float(value)
-        print("PDQ: {0:4f}\nmAP: {1:4f}\n".format(data['PDQ'],data['mAP']))
+        print("PDQ: {0:4f} mAP: {1:4f}".format(data['PDQ'],data['mAP']))
         
         #snow
         print("running yolov5 on corruption snow...")
@@ -41,6 +43,7 @@ class model:
                 if line:
                     name,value=line.strip().split(':',1)
                     data_snow[name]=float(value)
+        print("PDQ: {0:4f} mAP: {1:4f}".format(data_snow['PDQ'],data_snow['mAP']))
         
         #frost
         print("running yolov5 on corruption frost...")
@@ -51,6 +54,7 @@ class model:
                 if line:
                     name,value=line.strip().split(':',1)
                     data_frost[name]=float(value)
+        print("PDQ: {0:4f} mAP: {1:4f}".format(data_frost['PDQ'],data_frost['mAP']))
         
         #fog
         print("running yolov5 on corruption fog...")
@@ -60,9 +64,16 @@ class model:
             for line in f.readlines():
                 if line:
                     name,value=line.strip().split(':',1)
-                    data_fog[name]=float(value)      
+                    data_fog[name]=float(value) 
+        print("PDQ: {0:4f} mAP: {1:4f}".format(data_fog['PDQ'],data_fog['mAP']))     
         r_PDQ=(data_snow['PDQ']+data_frost['PDQ']+data_fog['PDQ'])/data['PDQ']/3
-        r_mAP==(data_snow['mAP']+data_frost['mAP']+data_fog['mAP'])/data['mAP']/3
+        r_mAP=(data_snow['mAP']+data_frost['mAP']+data_fog['mAP'])/data['mAP']/3
+        print("the final PDQ: {0:4f}\nmAP: {1:4f}\nr_PDQ: {2:4f}\nr_mAP {3:4f}\n".format(data['PDQ'],data['mAP'],r_PDQ,r_mAP))
+        
+        current_time = time.time()
+        run_time=(current_time - old_time)/60
+                
+        print("running time:{:.3}min".format(run_time))
 
         return [data['PDQ'],data['mAP'],r_PDQ,r_mAP]
 
@@ -76,7 +87,7 @@ class MyProblem(ElementwiseProblem):
         
         Model=model(x[0],x[1],x[2])
         output=Model.run()
-        f1,f2,f3,f4=output[0]*(-1),output[1]*(-1),output[3]*(-1),output[4]*(-1)    
+        f1,f2,f3,f4=output[0]*(-1),output[1]*(-1),output[2]*(-1),output[3]*(-1)    
         out["F"] = np.column_stack([f1,f2,f3,f4])
 
 mask = ["real", "int","int"]
@@ -97,7 +108,7 @@ mutation = MixedVariableMutation(mask, {
 })
 problem = MyProblem()
 
-algorithm = NSGA2(pop_size=3,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
+algorithm = NSGA2(pop_size=32,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
 
 res = minimize(problem,
                algorithm,
@@ -114,7 +125,7 @@ plot = Scatter()
 plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
 plot.save("res.png")
-np.save("checkpoint", checkpoint)
+np.save("checkpoint", algorithm)
 
 resume=0
 if resume==1:

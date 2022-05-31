@@ -285,11 +285,11 @@ def run(data,
              # Append statistics (correct, conf, pcls, tcls)
              stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
 
-        if batch_i < 3:
-            f = save_dir / f'test_batch{batch_i}_labels.jpg'
-            plot_images(im, targets, paths=paths, names=names, fname=f, max_subplots=batch_size)  # ground truth
-            f = save_dir / f'test_batch{batch_i}_pred.jpg'
-            plot_images(im, output_to_target(output, width, height), paths=paths, names=names, fname=f, max_subplots=batch_size)  # predictions
+    #    if batch_i < 3:
+    #        f = save_dir / f'test_batch{batch_i}_labels.jpg'
+    #        plot_images(im, targets, paths=paths, names=names, fname=f, max_subplots=batch_size)  # ground truth
+    #        f = save_dir / f'test_batch{batch_i}_pred.jpg'
+    #        plot_images(im, output_to_target(output, width, height), paths=paths, names=names, fname=f, max_subplots=batch_size)  # predictions
 
 
             # Compute statistics
