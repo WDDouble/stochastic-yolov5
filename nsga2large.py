@@ -20,7 +20,7 @@ class model:
         old_time = time.time()
         cfg_list=["yolov5s-dropout.yaml","yolov5s-gdropout.yaml","yolov5s-dropblock.yaml"]
         print("running yolov5...")
-        subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples','10','--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','8','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples','10','--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         print("evaluating PDQ and mAP...")
         subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         data={}
@@ -86,10 +86,10 @@ class MyProblem(ElementwiseProblem):
         
         Model=model(x[0],x[1])
         output=Model.run()
-        f1,f2,f3,f4=output[0]*(-1),output[1]*(-1)    
+        f1,f2=output[0]*(-1),output[1]*(-1)    
         out["F"] = np.column_stack([f1,f2])
 
-mask = ["real", "int","int"]
+mask = ["real", "int"]
 
 sampling = MixedVariableSampling(mask, {
     "real": get_sampling("real_random"),
