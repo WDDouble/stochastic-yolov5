@@ -22,26 +22,62 @@ class model:
         print("evaluating PDQ and mAP...")
         subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         data={}
+        data_snow={}
+        data_frost={}
+        data_fog={}        
         with open(r"./output/scores.txt") as f:
             for line in f.readlines():
                 if line:
                     name,value=line.strip().split(':',1)
                     data[name]=float(value)
         print("PDQ: {0:4f}\nmAP: {1:4f}\n".format(data['PDQ'],data['mAP']))
-        return [data['PDQ'],data['mAP']]
+        
+        #snow
+        print("running yolov5 on corruption snow...")
+        subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate,'--corruption_num','7','--severity','3'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        with open(r"./output/scores.txt") as f:
+            for line in f.readlines():
+                if line:
+                    name,value=line.strip().split(':',1)
+                    data_snow[name]=float(value)
+        
+        #frost
+        print("running yolov5 on corruption frost...")
+        subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate,'--corruption_num','8','--severity','3'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        with open(r"./output/scores.txt") as f:
+            for line in f.readlines():
+                if line:
+                    name,value=line.strip().split(':',1)
+                    data_frost[name]=float(value)
+        
+        #fog
+        print("running yolov5 on corruption fog...")
+        subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples',self.num_sample,'--conf-thres','0.5','--new_drop_rate',self.drop_rate,'--corruption_num','9','--severity','3'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        with open(r"./output/scores.txt") as f:
+            for line in f.readlines():
+                if line:
+                    name,value=line.strip().split(':',1)
+                    data_fog[name]=float(value)      
+        r_PDQ=(data_snow['PDQ']+data_frost['PDQ']+data_fog['PDQ'])/data['PDQ']/3
+        r_mAP==(data_snow['mAP']+data_frost['mAP']+data_fog['mAP'])/data['mAP']/3
+
+        return [data['PDQ'],data['mAP'],r_PDQ,r_mAP]
 
 
 class MyProblem(ElementwiseProblem):
     def __init__(self):
-        super().__init__(n_var=3, n_obj=2,xl=np.array([0, 0, 2]), xu=[1,2,10])
+        super().__init__(n_var=3, n_obj=4,xl=np.array([0, 0, 2]), xu=[1,2,10])
 
     def _evaluate(self, x, out, *args, **kwargs):
         print(x)
         
         Model=model(x[0],x[1],x[2])
         output=Model.run()
-        f1,f2=output[0]*(-1),output[1]*(-1)      
-        out["F"] = np.column_stack([f1,f2])
+        f1,f2,f3,f4=output[0]*(-1),output[1]*(-1),output[3]*(-1),output[4]*(-1)    
+        out["F"] = np.column_stack([f1,f2,f3,f4])
 
 mask = ["real", "int","int"]
 
@@ -61,8 +97,8 @@ mutation = MixedVariableMutation(mask, {
 })
 problem = MyProblem()
 
-algorithm = NSGA2(pop_size=50,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
-'''
+algorithm = NSGA2(pop_size=3,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
+
 res = minimize(problem,
                algorithm,
                ('n_gen', 1),
@@ -79,8 +115,8 @@ plot.add(res.F, facecolor="none", edgecolor="red")
 plot.show()
 plot.save("res.png")
 np.save("checkpoint", checkpoint)
-'''
-resume=1
+
+resume=0
 if resume==1:
     checkpoint, = np.load("checkpoint.npy", allow_pickle=True).flatten()
     print("Loaded Checkpoint:", checkpoint)
