@@ -68,12 +68,13 @@ class model:
         print("PDQ: {0:4f} mAP: {1:4f}".format(data_fog['PDQ'],data_fog['mAP']))     
         r_PDQ=(data_snow['PDQ']+data_frost['PDQ']+data_fog['PDQ'])/data['PDQ']/3
         r_mAP=(data_snow['mAP']+data_frost['mAP']+data_fog['mAP'])/data['mAP']/3
-        print("the final PDQ: {0:4f}\nmAP: {1:4f}\nr_PDQ: {2:4f}\nr_mAP {3:4f}\n".format(data['PDQ'],data['mAP'],r_PDQ,r_mAP))
-        ''' 
+        '''
+        print("PDQ: {0:4f}\nmAP: {1:4f}".format(data['PDQ'],data['mAP']))
+        
         current_time = time.time()
         run_time=(current_time - old_time)/60
                 
-        print("running time:{:.3}min".format(run_time))
+        print("running time:{:.3}min\n".format(run_time))
 
         return [data['PDQ'],data['mAP']]
 

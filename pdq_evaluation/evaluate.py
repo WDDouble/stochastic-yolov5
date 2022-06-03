@@ -129,7 +129,7 @@ def main():
     if not os.path.isdir(args.save_folder):
         os.makedirs(args.save_folder)
 
-    print("Extracting GT and Detections")
+#    print("Extracting GT and Detections")
     param_sequence, len_sequences = gen_param_sequence()
 
     print("Calculating PDQ")
@@ -149,9 +149,9 @@ def main():
     all_det_eval_dicts = evaluator._det_evals
 
     # Calculate mAP
-    print("Calculating mAP")
+#    print("Calculating mAP")
     # generate the parameter sequence again for new tests (generator does not hold onto data once used)
-    print("Extracting GT and Detections")
+#    print("Extracting GT and Detections")
     param_sequence, len_sequences = gen_param_sequence()
     if args.mAP_heatmap:
         mAP = coco_mAP(param_sequence, use_heatmap=True)
@@ -160,65 +160,16 @@ def main():
         mAP = coco_mAP(param_sequence, use_heatmap=False)
         print('mAP: {0}'.format(mAP))
 
-    # Calculate LRP
-    print("Calculating LRP")
-    # generate the parameter sequence again for new tests (generator does not hold onto data once used)
-    print("Extracting GT and Detections")
-    param_sequence, len_sequences = gen_param_sequence()
-    # Use same BBox definition as would be used for mAP
-    # Extract all moLRP statistics        
-    try:
-        if args.mAP_heatmap:
-            LRP_dict = coco_LRP(param_sequence, use_heatmap=True, full=True)
-        else:
-            LRP_dict = coco_LRP(param_sequence, use_heatmap=False, full=True)
-    except Exception as e:
-        print('Error in coco_LRP, setting all as NaN')
-        print(e)
-        LRP_dict = {'moLRP': np.nan, 'moLRPLoc': np.nan, 'moLRPFP': np.nan, 'moLRPFN': np.nan}
-
     # Compile evaluation statistics into a single dictionary
     result = {"PDQ": pdq, "avg_pPDQ": avg_overall_quality, "avg_spatial": avg_spatial_quality,
               'avg_fg': avg_fg_quality, 'avg_bg': avg_bg_quality,
-              "avg_label": avg_label_quality, "TP": TP, "FP": FP, "FN": FN, 'mAP': mAP,
-              'moLRP': LRP_dict['moLRP'], 'moLRPLoc': LRP_dict['moLRPLoc'], 'moLRPFP': LRP_dict['moLRPFP'],
-              'moLRPFN': LRP_dict['moLRPFN']}
-#    print("PDQ: {0:4f}\n"
- #         "mAP: {1:4f}\n"
- #         "avg_pPDQ:{2:4f}\n"
-  #        "avg_spatial:{3:4f}\n"
-  #        "avg_label:{4:4f}\n"
-  #        "avg_foreground:{5:4f}\n"
-  #        "avg_background:{6:4f}\n"
-   #       "TP:{7}\nFP:{8}\nFN:{9}\n"
-   #       "moLRP:{10:4f}\n"
-   #       "moLRPLoc:{11:4f}\n"
-    #      "moLRPFP:{12:4f}\n"
-   #       "moLRPFN:{13:4f}\n".format(pdq, mAP, avg_overall_quality, avg_spatial_quality,
-    #                                 avg_label_quality, avg_fg_quality, avg_bg_quality, TP, FP, FN,
-    #                                 LRP_dict['moLRP'], LRP_dict['moLRPLoc'], LRP_dict['moLRPFP'], LRP_dict['moLRPFN']))
+              "avg_label": avg_label_quality, "TP": TP, "FP": FP, "FN": FN, 'mAP': mAP
+              }
+
 
     # Save evaluation statistics to file
     with open(os.path.join(args.save_folder, 'scores.txt'), 'w') as output_file:
         output_file.write("\n".join("{0}:{1}".format(k, v) for k, v in sorted(result.items())))
-    
-    # Saving in CSV format for easier post analysis
-#    saving_location = os.path.join('results', f'metrics.csv')
-#    print(f'Saving {saving_location}...')
-#    pd.DataFrame.from_dict({args.name: result}, orient='index').to_csv(saving_location)
-
-    # Save pairwise PDQ statistics to file for use in visualisation code (separate file for each sequence)
- #   prev_idx = 0
-  #  for idx, len_sequence in enumerate(len_sequences):
-  #      seq_gt_eval_dicts = all_gt_eval_dicts[prev_idx:prev_idx+len_sequence]
-   #     seq_det_eval_dicts = all_det_eval_dicts[prev_idx:prev_idx + len_sequence]
-   #     prev_idx += len_sequence
-
-   #     with open(os.path.join(args.save_folder, f'gt_eval_stats_{args.name}_{idx:02d}.json'), 'w') as f:
-   #         json.dump(seq_gt_eval_dicts, f)
-    #    with open(os.path.join(args.save_folder, f'det_eval_stats_{args.name}_{idx:02d}.json'), 'w') as f:
-    #        json.dump(seq_det_eval_dicts, f)
-
 
 if __name__ == '__main__':
     main()
