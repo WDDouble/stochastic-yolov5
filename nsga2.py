@@ -80,17 +80,17 @@ class model:
 
 class MyProblem(ElementwiseProblem):
     def __init__(self):
-        super().__init__(n_var=3, n_obj=4,xl=np.array([0, 0, 2]), xu=[1,2,10])
+        super().__init__(n_var=2, n_obj=4,xl=np.array([0, 0]), xu=0.5,2])
 
     def _evaluate(self, x, out, *args, **kwargs):
         print(x)
         
-        Model=model(x[0],x[1],x[2])
+        Model=model(x[0],x[1])
         output=Model.run()
         f1,f2,f3,f4=output[0]*(-1),output[1]*(-1),output[2]*(-1),output[3]*(-1)    
         out["F"] = np.column_stack([f1,f2,f3,f4])
 
-mask = ["real", "int","int"]
+mask = ["real", "int"]
 
 sampling = MixedVariableSampling(mask, {
     "real": get_sampling("real_random"),
