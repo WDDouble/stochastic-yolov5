@@ -73,7 +73,7 @@ class model:
         current_time = time.time()
         run_time=(current_time - old_time)/60
                 
-        print("running time:{:.3}min}\n".format(run_time))
+        print("running time:{:.3}min\n".format(run_time))
 
         return [data['PDQ'],data['mAP'],r_PDQ,r_mAP]
 
