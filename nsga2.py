@@ -80,7 +80,7 @@ class model:
 
 class MyProblem(ElementwiseProblem):
     def __init__(self):
-        super().__init__(n_var=2, n_obj=4,xl=np.array([0, 0]), xu=0.5,2])
+        super().__init__(n_var=2, n_obj=4,xl=np.array([0, 0]), xu=[0.5,2])
 
     def _evaluate(self, x, out, *args, **kwargs):
         print(x)
