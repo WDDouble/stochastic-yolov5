@@ -22,7 +22,7 @@ class model:
         print("running yolov5...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples','8','--conf-thres','0.5','--new_drop_rate',self.drop_rate],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         print("evaluating PDQ and mAP...")
-        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/drive/MyDrive/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         data={}
         data_snow={}
         data_frost={}
@@ -37,7 +37,7 @@ class model:
         #snow
         print("running yolov5 on corruption snow...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples','8','--conf-thres','0.5','--new_drop_rate',self.drop_rate,'--corruption_num','7','--severity','3'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
-        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/drive/MyDrive/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         with open(r"./output/scores.txt") as f:
             for line in f.readlines():
                 if line:
@@ -48,7 +48,7 @@ class model:
         #frost
         print("running yolov5 on corruption frost...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples','8','--conf-thres','0.5','--new_drop_rate',self.drop_rate,'--corruption_num','8','--severity','3'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
-        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/drive/MyDrive/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         with open(r"./output/scores.txt") as f:
             for line in f.readlines():
                 if line:
@@ -59,7 +59,7 @@ class model:
         #fog
         print("running yolov5 on corruption fog...")
         subprocess.call(['python', 'val.py','--cfg',cfg_list[self.dropout_type],'--batch','16','--data','coco.yaml','--imgsz','640','--iou-thres','0.6','--num_samples','8','--conf-thres','0.5','--new_drop_rate',self.drop_rate,'--corruption_num','9','--severity','3'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
-        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
+        subprocess.call(['python', 'pdq_evaluation/evaluate.py','--test_set','coco','--gt_loc','/content/drive/MyDrive/datasets/coco/annotations/instances_val2017.json','--det_loc','/content/stochastic-yolov5/dets_converted_exp_0.5_0.6.json','--save_folder','output','--num_workers','15'],stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT)
         with open(r"./output/scores.txt") as f:
             for line in f.readlines():
                 if line:
@@ -108,7 +108,7 @@ mutation = MixedVariableMutation(mask, {
 })
 problem = MyProblem()
 
-algorithm = NSGA2(pop_size=32,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
+algorithm = NSGA2(pop_size=36,sampling=sampling,crossover=crossover,mutation=mutation,eliminate_duplicates=True,)
 
 res = minimize(problem,
                algorithm,

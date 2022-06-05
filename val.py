@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 import sys
-sys.path.append('/content/datasets/coco/annotations/instances_val2017.json')
+sys.path.append('/content/drive/MyDrive/datasets/coco/annotations/instances_val2017.json')
 
 sys.path.append('./pdq_evaluation')
 from read_files import convert_coco_det_to_rvc_det
@@ -344,7 +344,7 @@ def run(data,
             del jdict
             print('Converting to RVC1 format...')
             convert_coco_det_to_rvc_det(det_filename=save_dir/f'dets_{name}_{conf_thres}_{iou_thres}.json',
-                                       gt_filename='/content/datasets/coco/annotations/instances_val2017.json',
+                                       gt_filename='/content/drive/MyDrive/datasets/coco/annotations/instances_val2017.json',
                                       save_filename=save_dir/f'dets_converted_{name}_{conf_thres}_{iou_thres}.json')
 
 
