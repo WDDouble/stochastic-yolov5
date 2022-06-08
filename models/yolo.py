@@ -86,11 +86,17 @@ class Detect(nn.Module):
                 z = []
                 for i in range(self.nl):
                     if self.dropout_type==0:
-                        x[i] = self.m[i](self.dropout((temp[i]))) 
+                        x[i] = self.m[i](self.dropout(temp[i]))
                     elif self.dropout_type==1:
-                        x[i] = self.m[i](self.gdropout((temp[i])))
+                        x[i] = self.m[i](self.gdropout(temp[i]))
                     elif self.dropout_type==2:
-                        x[i]= self.m[i](self.DropBlock((temp[i])))
+                        x[i]= self.m[i](self.DropBlock(temp[i]))
+                    elif self.dropout_type==3:
+                        x[i]= self.m[i](self.gdropout(self.dropout(temp[i])))
+                    elif self.dropout_type==4:
+                        x[i]= self.m[i](self.DropBlock(self.dropout(temp[i])))
+                    elif self.dropout_type==5:
+                        x[i]= self.m[i](self.DropBlock(self.gdropout(temp[i]))) 
                     else:
                         x[i] = self.m[i](x[i])
                     bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)

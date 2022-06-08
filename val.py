@@ -55,6 +55,18 @@ def change_dropout_rate(m, perc):
         if each_module.__class__.__name__.startswith('Dropout') or each_module.__class__.__name__.startswith('GaussianDropout') or each_module.__class__.__name__.startswith('DropBlock2d'):
             each_module.p = perc
 
+def change_second_layer(m,cfg,perc):
+    for each_module in m.modules():
+        if cfg='yolov5s-dg.yaml':
+            if each_module.__class__.__name__.startswith('GaussianDropout'):
+                each_module.p = perc
+        if cfg='yolov5s-db.yaml':
+            if each_module.__class__.__name__.startswith('DropBlock2d'):
+                each_module.p = perc         
+        if cfg='yolov5s-gd.yaml':
+            if each_module.__class__.__name__.startswith('DropBlock2d'):
+                each_module.p = perc
+
 
 def run(data,
         weights=None,  # model.pt path(s)
@@ -87,6 +99,7 @@ def run(data,
         corruption_num=None,
         severity=None,
         new_drop_rate=None,
+        second_drop_rate=None,
         cfg=None,
         ):
     # Initialize/load model and set device
@@ -119,6 +132,9 @@ def run(data,
         if new_drop_rate is not None:
             print('Changing default dropout rate...')
             change_dropout_rate(m=model, perc=new_drop_rate)
+        if second_drop_rate is not None:
+            print('Changing second dropout rate')
+            change_second_layer(m=model,cfg=cfg,perc=second_drop_rate)
 
         # Data
         data = check_dataset(data)  # check
@@ -381,6 +397,7 @@ def parse_opt():
     parser.add_argument('--num_samples', type=int, default=10, help='How many times to sample if doing MC-Dropout')
     parser.add_argument('--corruption_num', type=int, help='which corruption number to use from imagecorruptions')
     parser.add_argument('--new_drop_rate', type=float, help='change the dropout rate of Dropout layers')
+    parser.add_argument('--second_drop_rate', type=float, help='change the dropout rate of the second Dropout layers')
     parser.add_argument('--severity', type=int, help='which severity to use for the corruption in --corruption_num')
 
 
