@@ -57,13 +57,13 @@ def change_dropout_rate(m, perc):
 
 def change_second_layer(m,cfg,perc):
     for each_module in m.modules():
-        if cfg='yolov5s-dg.yaml':
+        if cfg=='yolov5s-dg.yaml':
             if each_module.__class__.__name__.startswith('GaussianDropout'):
                 each_module.p = perc
-        if cfg='yolov5s-db.yaml':
+        if cfg=='yolov5s-db.yaml':
             if each_module.__class__.__name__.startswith('DropBlock2d'):
                 each_module.p = perc         
-        if cfg='yolov5s-gd.yaml':
+        if cfg=='yolov5s-gd.yaml':
             if each_module.__class__.__name__.startswith('DropBlock2d'):
                 each_module.p = perc
 
